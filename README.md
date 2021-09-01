@@ -28,10 +28,10 @@ Using the ssh protocol means that Linux, macOS can quickly connect using the `ss
 ```
 
 ## Quick start
-local server listen port: `8080`, remote port: `80`or `443`
+local server listen port: `8082`, remote port: `80`or `443`
 
 ```shell
-ssh -R 80:localhost:8080 4chain.me
+ssh -R 443::8082 4chain.me
 ```
 
 ## Developer

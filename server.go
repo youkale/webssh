@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Config struct {
@@ -53,7 +54,7 @@ func Start(config *Config) {
 			panic(err)
 		}
 		log.Printf(`start ssh server on %s`, config.SSHAddr)
-		server := newSSHServer(h, signer)
+		server := newSSHServer(config, h, signer)
 		log.Fatal(server.Serve(listen))
 	}()
 	wg.Wait()
@@ -71,14 +72,14 @@ func Start(config *Config) {
 		certmagicConfig.Storage = storage
 
 		acmeManager := certmagic.NewACMEManager(certmagicConfig, certmagic.ACMEManager{
+			Email: config.Email,
+			Agreed: true,
 			DNS01Solver: &certmagic.DNS01Solver{
 				DNSProvider: &cloudflare.Provider{
 					APIToken: config.CfToken,
 				},
 			},
 		})
-		acmeManager.Email = config.Email
-
 
 		certmagicConfig.Issuers = append(certmagicConfig.Issuers, acmeManager)
 
@@ -105,9 +106,10 @@ func Start(config *Config) {
 	wg.Wait()
 }
 
-func newSSHServer(hand ForwardHandler, hostkey ssh.Signer) *ssh.Server {
+func newSSHServer(config *Config,hand ForwardHandler, hostkey ssh.Signer) *ssh.Server {
 
 	return &ssh.Server{
+		IdleTimeout: time.Duration(config.IdleTimeout) * time.Second,
 		PtyCallback: func(ctx ssh.Context, pty ssh.Pty) bool {
 			return false
 		},

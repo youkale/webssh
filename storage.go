@@ -142,16 +142,13 @@ func randStr(len int) string {
 	defer rlock.Unlock()
 	bytes := make([]byte, len)
 	for i := 0; i < len; i++ {
-		intn := r.Intn(3)
+		intn := r.Intn(2)
 		var b int
 		switch intn {
 		case 0:
-			b = r.Intn(26) + 65
-			break
-		case 1:
 			b = r.Intn(26) + 97
 			break
-		case 2:
+		case 1:
 			b = r.Intn(10) + 48
 			break
 		}

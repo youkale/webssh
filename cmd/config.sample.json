@@ -1,0 +1,9 @@
+{
+  "addr": ":443",
+  "email": "admin@4chain.me",
+  "cf_token": "xxx",
+  "ssh_addr": ":22",
+  "domain": "4chain.me",
+  "idle_timeout": 300,
+  "key": "-----BEGIN OPENSSH PRIVATE KEY-----\nxxxxxx\n-----END OPENSSH PRIVATE KEY-----\n"
+}

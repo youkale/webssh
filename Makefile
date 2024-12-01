@@ -1,4 +1,4 @@
-PROC_NAME = goim
+PROC_NAME = webssh
 RELEASE_PATH = release
 PACKAGE_PATH = release
 SERVER_PATH = cmd
@@ -7,10 +7,10 @@ install:
 	@go get
 
 build-cgo:
-	cd ${SERVER_PATH} &&  GOOS=linux GOARCH=amd64 go build -race -ldflags "-s -w" -o $(RELEASE_PATH)/4chainc
+	cd ${SERVER_PATH} &&  GOOS=linux GOARCH=amd64 go build -race -ldflags "-s -w" -o $(RELEASE_PATH)/webssh
 
 build:
-	cd ${SERVER_PATH} &&  GOOS=linux GOARCH=amd64 go build -o $(RELEASE_PATH)/4chain
+	cd ${SERVER_PATH} &&  GOOS=linux GOARCH=amd64 go build -o $(RELEASE_PATH)/webssh
 
 clean:
 	# clean package
@@ -20,6 +20,5 @@ clean:
 
 package: clean build
 	mkdir -p ${PACKAGE_PATH}
-	cp ${SERVER_PATH}/${RELEASE_PATH}/4chain  ${PACKAGE_PATH}
-	cp ${SERVER_PATH}/config.json  ${PACKAGE_PATH}
-	cp run.sh ${PACKAGE_PATH}
+	cp ${SERVER_PATH}/${RELEASE_PATH}/webssh  ${PACKAGE_PATH}
+	cp ${SERVER_PATH}/config.example.json  ${PACKAGE_PATH}/config.json

@@ -1,10 +1,13 @@
-package edge
+package webssh
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/gliderlabs/ssh"
-	qr "github.com/mdp/qrterminal/v3"
+	"github.com/karlseguin/ccache/v3"
+	"github.com/teris-io/shortid"
 	gossh "golang.org/x/crypto/ssh"
 	"io"
 	"log"
@@ -12,153 +15,310 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
+const (
+	sshRequestTypeForward       = "tcpip-forward"
+	sshRequestTypeCancelForward = "cancel-tcpip-forward"
+	sshForwardChannelName       = "forwarded-tcpip"
 
-type remoteForwardRequest struct {
-	BindAddr string
-	BindPort uint32
-}
+	sshContextKeyAlias = "sshSessionHubKey"
+
+	sshContextKeyRequestHandler = "req-handler-name"
+
+	NotFound = `HTTP/1.0 404 Not Found
+Server: %s
+Content-Length: %d
+
+Tunnel %s not found
+`
+
+	BadRequest = `HTTP/1.0 400 Bad Request
+Server: %s
+Content-Length: 12
+
+Bad Request
+`
+)
+
+type requestForward func(*request)
+
+type forward func(net.Conn)
 
 type remoteForwardSuccess struct {
 	BindPort uint32
 }
 
-type ForwardHandler interface {
-	TCPIPForward(ctx ssh.Context, srv *ssh.Server, req *gossh.Request) (ok bool, payload []byte)
-	CancelTCPIPForward(ctx ssh.Context, srv *ssh.Server, req *gossh.Request) (ok bool, payload []byte)
-	SessionHandler(sess ssh.Session)
+type remoteForwardCancelRequest struct {
+	BindAddr string
+	BindPort uint32
 }
 
-func clientDial(sessionId,bindAddr,remoteAddr string) (*http.Client, error) {
-	conn, err := createConnect(sessionId, bindAddr, remoteAddr)
-	if nil != err {
-		return nil, err
+type remoteForwardChannelData struct {
+	DestAddr   string
+	DestPort   uint32
+	OriginAddr string
+	OriginPort uint32
+}
+
+type request struct {
+	requestId string
+	conn      net.Conn
+	method    string
+	path      string
+}
+
+type repeatRead struct {
+	r io.Reader
+	net.Conn
+}
+
+func (re *repeatRead) Read(p []byte) (n int, err error) {
+	return re.r.Read(p)
+}
+
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 32*1024)
+	},
+}
+
+type forwarder struct {
+	ctx      context.Context
+	sessHub  sync.Map
+	aliasHub sync.Map
+	bindAddr string
+	bindPort uint32
+	domain   string
+}
+
+func newForwarder(ctx context.Context, bind, domain string) (*forwarder, error) {
+	host, p, err := net.SplitHostPort(bind)
+	if err != nil {
+		return nil, fmt.Errorf("invalid bind address: %w", err)
 	}
-	return &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return conn, nil
-			},
-		},
+	bindPort, err := strconv.Atoi(p)
+	if err != nil {
+		return nil, fmt.Errorf("invalid port number: %w", err)
+	}
+	return &forwarder{
+		ctx:      ctx,
+		bindAddr: host,
+		bindPort: uint32(bindPort),
+		domain:   domain,
 	}, nil
 }
 
-type handle struct {
-	config *Config
-	listenAddr string
-	port int
-}
+func (f *forwarder) forward(c net.Conn) {
 
+	buf := bufferPool.Get().([]byte)
+	defer bufferPool.Put(buf)
 
-func newHandle(conf *Config) *handle {
-	_, port, _ := net.SplitHostPort(conf.Addr)
-	p, _ := strconv.Atoi(port)
-	return &handle{
-		port: p,
-		config: conf,
-		listenAddr: fmt.Sprintf(`localhost:%s`, port),
-	}
-}
-
-func (f *handle) accessAddr(alias string) string {
-	sb := strings.Builder{}
-	sb.WriteString("https://")
-	sb.WriteString(alias)
-	sb.WriteString(".")
-	sb.WriteString(f.config.Domain)
-	return sb.String()
-}
-
-func (f *handle) SessionHandler(sess ssh.Session) {
-	id := sess.Context().Value(ssh.ContextKeySessionID).(string)
-	log.Printf(`ssh session %s is open`, id)
-	alias := getSessionAlias(id)
-	qrconf := qr.Config{
-		Level: qr.L,
-		Writer: sess,
-		BlackChar: qr.WHITE,
-		WhiteChar: qr.BLACK,
-		QuietZone: 1,
-	}
-	for _, a := range alias {
-		p := f.accessAddr(a)
-		qr.GenerateWithConfig(p,qrconf)
-		io.WriteString(sess, p)
-		io.WriteString(sess, "\n")
-	}
-	<-sess.Context().Done()
-	log.Printf(`ssh session %s is closed`, id)
-}
-
-
-func (f *handle) TCPIPForward(ctx ssh.Context, srv *ssh.Server, req *gossh.Request) (ok bool, payload []byte) {
-	conn := ctx.Value(ssh.ContextKeyConn).(*gossh.ServerConn)
-	var reqPayload remoteForwardRequest
-	if err := gossh.Unmarshal(req.Payload, &reqPayload); err != nil {
-		// TODO: log parse failure
-		return false, []byte{}
-	}
-	var destPort int
-	if reqPayload.BindPort == 443 {
-		destPort = 443
-	} else {
-		destPort = f.port
-	}
-	saveSession(ctx.SessionID(),conn)
-	return true, gossh.Marshal(&remoteForwardSuccess{uint32(destPort)})
-}
-
-func (f *handle) CancelTCPIPForward(ctx ssh.Context, srv *ssh.Server, req *gossh.Request) (ok bool, payload []byte) {
-	deleteSession(ctx.SessionID())
-	return true,nil
-}
-
-func (f *handle) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	h := request.Host
-	n := strings.Split(h, ".")
-	if len(n) == 0 {
-		http.Error(writer,fmt.Sprintf("request host [%s] incorrect",h),http.StatusBadRequest)
-		return
-	}
-	client, err := clientDial(n[0],f.listenAddr,request.RemoteAddr)
-	if nil != err {
-		http.Error(writer,"not found session",http.StatusNotFound)
+	n, err := c.Read(buf)
+	if err != nil {
+		log.Printf("read error: %v", err)
+		c.Close()
 		return
 	}
 
-	u := request.URL.String()
-	req, e := http.NewRequest(request.Method, u, request.Body)
-	if nil != e {
-		http.Error(writer,"build handle request error",http.StatusBadRequest)
+	newReader := bytes.NewReader(buf[:n])
+	reader := bufio.NewReader(bytes.NewReader(buf[:n]))
+	req, err := http.ReadRequest(reader)
+	if err != nil {
+		log.Printf("parse request error: %v", err)
+		c.Close()
 		return
 	}
-	req.Header = request.Header.Clone()
-	if req.URL.Scheme == "" {
-		req.URL.Scheme = "http"
+
+	if _, err = newReader.Seek(0, io.SeekStart); err != nil {
+		log.Printf("seek error: %v", err)
+		c.Close()
+		return
 	}
-	if req.URL.Host == ""{
-		req.URL.Host = request.Host
+
+	domainSep := strings.Split(req.Host, ".")
+	if len(domainSep) <= 1 {
+		c.Close()
+		return
 	}
-	query := request.URL.Query()
-	for key, vals := range query {
-		for _, val := range vals {
-			req.URL.Query().Add(key,val)
+
+	reqId := domainSep[0]
+	fwd, err := f.findSshRequestHandle(reqId)
+	if err != nil {
+		c.Write([]byte(fmt.Sprintf(NotFound, f.domain, len(reqId)+18, reqId)))
+		c.Close()
+		return
+	}
+
+	fwd(&request{
+		method:    req.Method,
+		path:      req.URL.Path,
+		requestId: reqId,
+		conn: &repeatRead{
+			r:    io.MultiReader(newReader, c),
+			Conn: c,
+		},
+	})
+}
+
+func (f *forwarder) findSshRequestHandle(reqId string) (requestForward, error) {
+	if sid, ok := f.aliasHub.Load(reqId); ok {
+		if sess, ok := f.sessHub.Load(sid); ok {
+			return sess.(ssh.Session).Context().Value(sshContextKeyRequestHandler).(func(req *request)), nil
 		}
 	}
-	resp, err := client.Do(req)
-	if nil != err {
-		http.Error(writer,fmt.Sprintf("handle origin request error, %s",err.Error()),http.StatusBadRequest)
-		return
-	}
-	defer resp.Body.Close()
+	return nil, fmt.Errorf("reqId [%s] is not found", reqId)
+}
 
-	header := resp.Header
-	for k, v := range header {
-		for _, vv := range v {
-			writer.Header().Add(k, vv)
+var cache = ccache.New(ccache.Configure[string]().MaxSize(1_000_000))
+
+func (f *forwarder) generateRequestId(raddr net.Addr, regenerate bool) (string, error) {
+	switch raddr.(type) {
+	case *net.TCPAddr:
+		addr := raddr.(*net.TCPAddr)
+		cacheKey := addr.IP.String()
+		if regenerate {
+			cache.Delete(cacheKey)
+		}
+		fetch, err := cache.Fetch(cacheKey, time.Hour*12, func() (string, error) {
+			return shortid.Generate()
+		})
+		if nil != fetch && nil == err {
+			return fetch.Value(), nil
+		} else {
+			return shortid.Generate()
+		}
+	default:
+		return shortid.Generate()
+	}
+}
+
+type channelOpenMsg struct {
+	ChanType         string `sshtype:"90"`
+	PeersID          uint32
+	PeersWindow      uint32
+	MaxPacketSize    uint32
+	TypeSpecificData []byte `ssh:"rest"`
+}
+
+func (f *forwarder) sessionRequestServe(sess ssh.Session, alias string) {
+	sessChan := make(chan *request, 4) // Increased buffer size
+
+	ctx := sess.Context()
+	ctx.SetValue(sshContextKeyAlias, alias)
+	ctx.SetValue(sshContextKeyRequestHandler, func(r *request) {
+		select {
+		case sessChan <- r:
+		case <-time.After(5 * time.Second):
+			log.Printf("request channel full, dropping request for %s", alias)
+		}
+	})
+
+	_, _, isPty := sess.Pty()
+
+	if isPty {
+		fwd := fmt.Sprintf("https://%s", strings.Join([]string{alias, f.domain}, "."))
+		sess.Write([]byte(fwd))
+	}
+
+	for {
+		select {
+		case req := <-sessChan:
+			c := req.conn
+			originAddr, originPortStr, _ := net.SplitHostPort(c.RemoteAddr().String())
+			originPort, _ := strconv.Atoi(originPortStr)
+
+			payload := gossh.Marshal(&remoteForwardChannelData{
+				DestAddr:   f.bindAddr,
+				DestPort:   f.bindPort,
+				OriginAddr: originAddr,
+				OriginPort: uint32(originPort),
+			})
+
+			svrConn := sess.Context().Value(ssh.ContextKeyConn).(*gossh.ServerConn)
+
+			sshChan, _, err := svrConn.OpenChannel(sshForwardChannelName, payload)
+
+			if err != nil {
+				c.Write([]byte(fmt.Sprintf(BadRequest, f.domain)))
+				c.Close()
+			} else {
+				go func() {
+					//gossh.DiscardRequests(sshReqs)
+					msg := channelOpenMsg{TypeSpecificData: []byte("hello")}
+					sess.Write(gossh.Marshal(msg))
+				}()
+
+				go func() {
+					defer func() {
+						sshChan.Close()
+						c.Close()
+					}()
+					io.Copy(sshChan, c)
+				}()
+				io.Copy(c, sshChan)
+			}
+		case <-sess.Context().Done():
+			return
 		}
 	}
-	writer.WriteHeader(resp.StatusCode)
-	io.Copy(writer, resp.Body)
+}
+
+func (f *forwarder) sessionHandle(sess ssh.Session) {
+
+	sessId := sess.Context().Value(ssh.ContextKeySessionID).(string)
+
+	raddr := sess.RemoteAddr()
+
+	alias, err := f.generateRequestId(raddr, false)
+
+	if nil != err {
+		return
+	}
+
+	log.Printf("create reqId [%s] -> sessId [%s...], addr [%s]",
+		alias, sessId[0:8], raddr.String())
+
+	f.aliasHub.Store(alias, sessId)
+	f.sessHub.Store(sessId, sess)
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		f.sessionRequestServe(sess, alias)
+		wg.Done()
+		sess.Close()
+		f.sessHub.Delete(sessId)
+		f.aliasHub.Delete(alias)
+	}()
+	wg.Wait()
+
+	log.Printf("close  reqId [%s] -> sessId [%s...], addr [%s]",
+		alias, sessId[0:8], raddr.String())
+}
+
+func (f *forwarder) handleRequest(ctx ssh.Context, _ *ssh.Server, req *gossh.Request) (bool, []byte) {
+	switch req.Type {
+	case sshRequestTypeForward:
+		return true, gossh.Marshal(&remoteForwardSuccess{f.bindPort})
+
+	case sshRequestTypeCancelForward:
+		var reqPayload remoteForwardCancelRequest
+		if err := gossh.Unmarshal(req.Payload, &reqPayload); err != nil {
+			// TODO: log parse failure
+			return false, []byte{}
+		}
+		id := ctx.Value(ssh.ContextKeySessionID).(string)
+		if sshConn, ok := f.sessHub.Load(id); ok {
+			sshConn.(ssh.Session).Close()
+			alias := ctx.Value(sshContextKeyAlias).(string)
+			f.aliasHub.Delete(alias)
+			f.sessHub.Delete(id)
+		}
+		return true, nil
+	default:
+		return false, nil
+	}
 }

@@ -1,12 +1,15 @@
-module github.com/4chain/edge
+module github.com/youkale/webssh
 
-go 1.16
+go 1.23
 
 require (
-	github.com/caddyserver/certmagic v0.14.1
-	github.com/gliderlabs/ssh v0.3.3
-	github.com/libdns/cloudflare v0.1.0
-	github.com/mdp/qrterminal/v3 v3.0.0
-	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
-	golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b // indirect
+	github.com/gliderlabs/ssh v0.3.7
+	github.com/karlseguin/ccache/v3 v3.0.6
+	github.com/teris-io/shortid v0.0.0-20220617161101-71ec9f2aa569
+	golang.org/x/crypto v0.29.0
+)
+
+require (
+	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
+	golang.org/x/sys v0.27.0 // indirect
 )

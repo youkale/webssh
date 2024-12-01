@@ -1,41 +1,43 @@
-package edge
+package webssh
 
 import (
-	gossh "golang.org/x/crypto/ssh"
+	"context"
 	"net"
-	"time"
 )
 
-type Conn struct {
-	gossh.Channel
-	local  net.Addr
-	remote net.Addr
+type inbound struct {
+	ctx context.Context
+	ln  net.Listener
+	fwd forward
 }
 
-func newConn(s gossh.Channel, local, remote net.Addr) *Conn {
-	return &Conn{
-		Channel: s,
-		local:   local,
-		remote:  remote}
+func newInbound(ctx context.Context, addr string, r forward) (*inbound, error) {
+	listen, err := net.Listen("tcp", addr)
+	if nil != err {
+		return nil, err
+	}
+	return &inbound{ctx: ctx, ln: listen, fwd: r}, nil
 }
 
-func (c *Conn) LocalAddr() net.Addr {
-	return c.local
+func (in *inbound) startServe() {
+	for {
+		select {
+		case <-in.ctx.Done():
+			return
+		default:
+			c, err := in.ln.Accept()
+			if nil != err {
+				c.Close()
+			} else {
+				go in.fwd(c)
+			}
+		}
+	}
 }
 
-func (c *Conn) RemoteAddr() net.Addr {
-	return c.remote
-}
-
-func (c *Conn) SetDeadline(t time.Time) error {
+func (in *inbound) Close() error {
+	if nil != in {
+		return in.ln.Close()
+	}
 	return nil
 }
-
-func (c *Conn) SetReadDeadline(t time.Time) error {
-	return nil
-}
-
-func (c *Conn) SetWriteDeadline(t time.Time) error {
-	return nil
-}
-

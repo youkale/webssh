@@ -1,4 +1,4 @@
 .idea
-release
-*/*/release
-cmd/config.json
+.tool-versions
+.release
+config.json

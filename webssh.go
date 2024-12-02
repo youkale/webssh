@@ -3,66 +3,186 @@ package webssh
 import (
 	"context"
 	"github.com/gliderlabs/ssh"
+	"github.com/youkale/webssh/logger"
 	gossh "golang.org/x/crypto/ssh"
-	"log"
+	"net"
 	"sync"
-	"time"
 )
 
-func newSshServer(sshAddr string, sshKey []byte, fwd *forwarder) *ssh.Server {
+var sessionHub sync.Map
+
+func init() {
+	sessionHub = sync.Map{}
+}
+
+const (
+	sshRequestTypeForward       = "tcpip-forward"
+	sshRequestTypeCancelForward = "cancel-tcpip-forward"
+	sshAccessIdKey              = "sshAccessId"
+)
+
+type remoteForwardSuccess struct {
+	BindPort uint32
+}
+
+type remoteForwardCancelRequest struct {
+	BindAddr string
+	BindPort uint32
+}
+
+type remoteForwardRequest struct {
+	BindAddr string
+	BindPort uint32
+}
+
+func requestHandler(bindPort uint32) func(ctx ssh.Context, _ *ssh.Server, req *gossh.Request) (bool, []byte) {
+	return func(ctx ssh.Context, _ *ssh.Server, req *gossh.Request) (bool, []byte) {
+		switch req.Type {
+		case sshRequestTypeForward:
+			var reqPayload remoteForwardRequest
+			if err := gossh.Unmarshal(req.Payload, &reqPayload); err != nil {
+				logger.Error("Unmarshal failed", err, map[string]interface{}{
+					"module": "serve",
+				})
+				return false, []byte{}
+			}
+			return true, gossh.Marshal(&remoteForwardSuccess{bindPort})
+
+		case sshRequestTypeCancelForward:
+			var reqPayload remoteForwardCancelRequest
+			if err := gossh.Unmarshal(req.Payload, &reqPayload); err != nil {
+				logger.Error("Unmarshal failed", err, map[string]interface{}{
+					"module": "serve",
+				})
+				return false, []byte{}
+			}
+			id := ctx.Value(sshAccessIdKey).(string)
+			sessionHub.Delete(id)
+			return true, nil
+		default:
+			return false, nil
+		}
+	}
+}
+
+func newSshServer(sshAddr string, sshKey []byte, bindPort uint32) *ssh.Server {
 	key, _ := gossh.ParseRawPrivateKey(sshKey)
 	signer, _ := gossh.NewSignerFromKey(key)
+
+	reqFunc := requestHandler(bindPort)
+
 	return &ssh.Server{
-		IdleTimeout: 300 * time.Second,
+		//IdleTimeout: 300 * time.Second,
 		HostSigners: []ssh.Signer{signer},
 		Addr:        sshAddr,
 		PtyCallback: func(ctx ssh.Context, pty ssh.Pty) bool {
 			return true
 		},
-		Handler: fwd.sessionHandle,
 		ReversePortForwardingCallback: func(ctx ssh.Context, bindHost string, bindPort uint32) bool {
 			return true
 		},
 		RequestHandlers: map[string]ssh.RequestHandler{
-			sshRequestTypeForward:       fwd.handleRequest,
-			sshRequestTypeCancelForward: fwd.handleRequest,
+			sshRequestTypeForward:       reqFunc,
+			sshRequestTypeCancelForward: reqFunc,
 		},
 	}
 }
 
-func Serve(_ctx context.Context, sshAddr, inboundAddr, domain string, sshKey []byte) {
+func Serve(_ctx context.Context, sshAddr, facadeAddr, domain string, sshKey []byte) {
 
 	wg := sync.WaitGroup{}
 
-	ctx, cancelFunc := context.WithCancel(_ctx)
-
-	fwd, err := newForwarder(ctx, inboundAddr, domain)
-	if nil != err {
-		log.Printf("starting ssh server on port %s", sshAddr)
+	_, sshPort, err := parseHostAddr(sshAddr)
+	if err != nil {
+		logger.Error("parse net.Addr failed", err, map[string]interface{}{
+			"module": "serve",
+		})
+		return
 	}
 
-	in, err := newInbound(ctx, inboundAddr, fwd.forward)
+	facadeHost, facadePort, err := parseHostAddr(facadeAddr)
+	if err != nil {
+		logger.Error("parse net.Addr failed", err, map[string]interface{}{
+			"module": "serve",
+		})
+		return
+	}
 
+	ctx, cancelFunc := context.WithCancel(_ctx)
+
+	server := newSshServer(sshAddr, sshKey, sshPort)
+
+	server.Handler = func(session ssh.Session) {
+		channel, err := newForwarder(session, facadeHost, facadePort)
+		if nil != err {
+			logger.Error("create forward", err, map[string]interface{}{
+				"module":     "serve",
+				"remoteAddr": session.RemoteAddr().String(),
+			})
+			return
+		}
+
+		id, err := generateAccessId(session.RemoteAddr())
+
+		if nil != err {
+			logger.Error("generating sessionId", err, map[string]interface{}{
+				"module": "serve",
+			})
+			session.Write([]byte("generating request id error"))
+			return
+		}
+		session.Context().SetValue(sshAccessIdKey, id)
+
+		logger.Debug("establishing ssh session", map[string]interface{}{
+			"module":   "session",
+			"accessId": id,
+		})
+		sessionHub.Store(id, channel)
+		channel.serve() // blocked with loop
+		sessionHub.Delete(id)
+		logger.Debug("clean ssh session", map[string]interface{}{
+			"module":   "session",
+			"accessId": id,
+		})
+		session.Close()
+	}
 	wg.Add(1)
 	go func() {
 		wg.Done()
-		log.Printf("starting inbound server on port %s", inboundAddr)
-		in.startServe()
+		facadeServe(ctx, facadeAddr, func(facadeId string, conn net.Conn) bool {
+			if value, found := sessionHub.Load(facadeId); found {
+				channel := value.(*forwarder)
+				channel.forward(conn)
+				return true
+			}
+			return false
+		})
 	}()
+	logger.Info("started facade server", map[string]interface{}{
+		"module":  "serve",
+		"address": facadeAddr,
+	})
 	wg.Wait()
 
-	server := newSshServer(sshAddr, sshKey, fwd)
-
 	wg.Add(1)
 	go func() {
 		wg.Done()
-		log.Printf("starting ssh server on port %s", sshAddr)
-		log.Fatal(server.ListenAndServe())
+		logger.Info("starting ssh server", map[string]interface{}{
+			"module":  "serve",
+			"address": sshAddr,
+		})
+		err := server.ListenAndServe()
+		logger.Error("starting ssh server", err, map[string]interface{}{
+			"module":  "serve",
+			"address": sshAddr,
+		})
 	}()
 	wg.Wait()
 
 	<-_ctx.Done()
 	server.Shutdown(ctx)
-	log.Println("server will be shutdown !!!")
+	logger.Warn("starting ssh server", map[string]interface{}{
+		"module": "serve",
+	})
 	cancelFunc()
 }

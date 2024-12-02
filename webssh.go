@@ -5,7 +5,6 @@ import (
 	"github.com/gliderlabs/ssh"
 	"github.com/youkale/webssh/logger"
 	gossh "golang.org/x/crypto/ssh"
-	"net"
 	"sync"
 )
 
@@ -154,10 +153,10 @@ func Serve(_ctx context.Context, sshAddr, facadeAddr, domain string, sshKey []by
 	wg.Add(1)
 	go func() {
 		wg.Done()
-		facadeServe(ctx, facadeAddr, func(facadeId string, conn net.Conn) bool {
+		facadeServe(ctx, facadeAddr, func(facadeId string, req *facadeRequest) bool {
 			if value, found := sessionHub.Load(facadeId); found {
 				channel := value.(*forwarder)
-				channel.forward(conn)
+				channel.forward(req)
 				return true
 			}
 			return false

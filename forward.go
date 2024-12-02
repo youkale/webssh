@@ -1,6 +1,7 @@
 package webssh
 
 import (
+	"bufio"
 	"context"
 	"github.com/gliderlabs/ssh"
 	"github.com/youkale/webssh/logger"
@@ -8,6 +9,7 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 	"io"
 	"net"
+	"net/http"
 	"strconv"
 )
 
@@ -15,9 +17,14 @@ type forwarder struct {
 	context    context.Context
 	cancelFunc context.CancelFunc
 	sess       ssh.Session
-	reqChan    chan net.Conn
+	reqChan    chan *facadeRequest
 	bindAddr   string
 	bindPort   uint32
+}
+
+type facadeRequest struct {
+	net.Conn
+	request *http.Request
 }
 
 func newForwarder(session ssh.Session, host string, port uint32) (*forwarder, error) {
@@ -28,7 +35,7 @@ func newForwarder(session ssh.Session, host string, port uint32) (*forwarder, er
 		sess:       session,
 		bindAddr:   host,
 		bindPort:   port,
-		reqChan:    make(chan net.Conn, 4),
+		reqChan:    make(chan *facadeRequest, 4),
 	}, nil
 }
 
@@ -39,8 +46,8 @@ type remoteForwardChannelData struct {
 	OriginPort uint32
 }
 
-func (ch *forwarder) forward(conn net.Conn) {
-	ch.reqChan <- conn
+func (ch *forwarder) forward(request *facadeRequest) {
+	ch.reqChan <- request
 }
 
 func (ch *forwarder) serve() {
@@ -49,20 +56,31 @@ func (ch *forwarder) serve() {
 	remoteAddr := ch.sess.RemoteAddr().String()
 	svrConn := ch.sess.Context().Value(ssh.ContextKeyConn).(*gossh.ServerConn)
 
-	logger.Info("start forward session", map[string]interface{}{
+	logger.Info("created forward session", map[string]interface{}{
 		"module":     "session",
 		"accessId":   accessId,
 		"remoteAddr": remoteAddr,
 	})
 
-	go tui.NewPty(ch.sess)
+	pty, _ := tui.NewPty(ch.sess)
+
+	go func() {
+		err := pty.Start()
+		if err != nil {
+			logger.Error("start pty session", err, map[string]interface{}{
+				"module":     "session",
+				"accessId":   accessId,
+				"remoteAddr": remoteAddr,
+			})
+		}
+	}()
 
 	for {
 		select {
 		case <-ch.context.Done():
 			return
-		case conn := <-ch.reqChan:
-			originAddr, originPortStr, _ := net.SplitHostPort(conn.RemoteAddr().String())
+		case req := <-ch.reqChan:
+			originAddr, originPortStr, _ := net.SplitHostPort(req.RemoteAddr().String())
 			originPort, _ := strconv.Atoi(originPortStr)
 			payload := gossh.Marshal(&remoteForwardChannelData{
 				DestAddr:   ch.bindAddr,
@@ -70,7 +88,9 @@ func (ch *forwarder) serve() {
 				OriginAddr: originAddr,
 				OriginPort: uint32(originPort),
 			})
-			sshChan, _, err := svrConn.OpenChannel("forwarded-tcpip", payload)
+			gosshChan, _, err := svrConn.OpenChannel("forwarded-tcpip", payload)
+			sshChan := wrapChannelConn(ch.sess, gosshChan)
+
 			if err != nil {
 				logger.Error("open forward channel", err, map[string]interface{}{
 					"module":     "session",
@@ -81,12 +101,23 @@ func (ch *forwarder) serve() {
 			}
 			go func() {
 				defer func() {
-					conn.Close()
+					req.Close()
 					sshChan.Close()
 				}()
-				io.Copy(sshChan, conn)
+				io.Copy(sshChan, req)
 			}()
-			io.Copy(conn, sshChan)
+
+			reader := sshChan.bufferedReader()
+			response, err := http.ReadResponse(bufio.NewReader(reader), req.request)
+
+			logger.Debug("ssh <-> facade", map[string]interface{}{
+				"module":   "session",
+				"accessId": accessId,
+				"method":   req.request.Method,
+				"path":     req.request.URL.Path,
+				"status":   response.StatusCode,
+			})
+			io.Copy(req, reader.toBufferedConn(sshChan))
 		}
 	}
 }

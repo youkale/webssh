@@ -1,11 +1,13 @@
 package tui
 
 import (
-	"fmt"
+	"errors"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gliderlabs/ssh"
 	zone "github.com/lrstanley/bubblezone"
+	"github.com/youkale/webssh/logger"
+	"net/http"
 )
 
 var (
@@ -98,63 +100,81 @@ func (m model) View() string {
 	)))
 }
 
-func NewPty(sess ssh.Session) {
+type Tui struct {
+	*tea.Program
+}
+
+func (t *Tui) Notify(w *http.Response, r *http.Request) {
+
+}
+
+func (t *Tui) Start() error {
+	_, err := t.Run()
+	if err != nil {
+		logger.Error("run pty", err, map[string]interface{}{
+			"module": "tui",
+		})
+		return err
+	}
+	return nil
+}
+
+func NewPty(sess ssh.Session) (*Tui, error) {
 	pty, windowCh, hasPty := sess.Pty()
-	if hasPty {
-		ctx := sess.Context()
 
-		zone.NewGlobal()
+	if !hasPty {
+		return nil, errors.New("no pty")
+	}
 
-		t := &tabs{
-			id:       zone.NewPrefix(),
-			height:   3,
-			active:   "Connection",
-			items:    []string{"Connection", "Requests", "About"},
-			requests: make([]string, 0),
-		}
+	ctx := sess.Context()
 
-		// Add some example requests
-		t.AddRequest("GET", "/api/connect", "200")
+	zone.NewGlobal()
 
-		m := &model{
-			quitFunc: func() {
-				sess.Close()
-			},
-			width:  pty.Window.Width,
-			height: pty.Window.Height,
-			tabs:   t,
-		}
+	t := &tabs{
+		id:       zone.NewPrefix(),
+		height:   3,
+		active:   "Connection",
+		items:    []string{"Connection", "Requests", "About"},
+		requests: make([]string, 0),
+	}
 
-		// Configure bubbletea program with SSH-specific options
-		p := tea.NewProgram(
-			m,
-			tea.WithAltScreen(),       // Use alternate screen buffer
-			tea.WithOutput(sess),      // Use SSH connection for output
-			tea.WithInput(sess),       // Use SSH connection for input
-			tea.WithMouseCellMotion(), // Enable mouse support
-			tea.WithMouseAllMotion(),  // Track all mouse motion
-		)
+	// Add some example requests
+	t.AddRequest("GET", "/api/connect", "200")
 
-		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					p.Quit()
-					return
-				case win := <-windowCh:
-					if m.width != win.Width || m.height != win.Height {
-						p.Send(tea.WindowSizeMsg{
-							Width:  win.Width,
-							Height: win.Height,
-						})
-					}
+	m := &model{
+		quitFunc: func() {
+			sess.Close()
+		},
+		width:  pty.Window.Width,
+		height: pty.Window.Height,
+		tabs:   t,
+	}
+
+	// Configure bubbletea program with SSH-specific options
+	p := tea.NewProgram(
+		m,
+		tea.WithAltScreen(),       // Use alternate screen buffer
+		tea.WithOutput(sess),      // Use SSH connection for output
+		tea.WithInput(sess),       // Use SSH connection for input
+		tea.WithMouseCellMotion(), // Enable mouse support
+		//tea.WithMouseAllMotion(),  // Track all mouse motion
+	)
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				p.Quit()
+				return
+			case win := <-windowCh:
+				if m.width != win.Width || m.height != win.Height {
+					p.Send(tea.WindowSizeMsg{
+						Width:  win.Width,
+						Height: win.Height,
+					})
 				}
 			}
-		}()
-
-		if _, err := p.Run(); err != nil {
-			fmt.Fprintf(sess, "Error running program: %v\n", err)
-			return
 		}
-	}
+	}()
+	return &Tui{Program: p}, nil
 }

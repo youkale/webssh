@@ -51,7 +51,6 @@ func (ch *forwarder) forward(request *facadeRequest) {
 }
 
 func (ch *forwarder) serve() {
-
 	accessId := ch.sess.Context().Value(sshAccessIdKey).(string)
 	remoteAddr := ch.sess.RemoteAddr().String()
 	svrConn := ch.sess.Context().Value(ssh.ContextKeyConn).(*gossh.ServerConn)

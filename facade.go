@@ -36,6 +36,50 @@ func notFound(id string, conn net.Conn) {
 	conn.Close()
 }
 
+func handleConnection(c net.Conn, forward func(facadeId string, request *facadeRequest) bool) {
+	reader := newBufferedReader(c)
+	req, err := http.ReadRequest(bufio.NewReader(reader))
+	if err != nil {
+		logger.Warn("bad request", map[string]interface{}{
+			"module": "facade",
+		})
+		badRequest(c)
+		return
+	}
+
+	domainSep := strings.Split(req.Host, ".")
+	if len(domainSep) <= 1 {
+		logger.Warn("bad request", map[string]interface{}{
+			"module": "facade",
+			"method": req.Method,
+			"url":    req.URL.String(),
+			"host":   req.Host,
+		})
+		badRequest(c)
+		return
+	}
+	id := domainSep[0]
+
+	canForward := forward(id, &facadeRequest{Conn: reader.toBufferedConn(c), request: req})
+
+	if canForward {
+		logger.Debug("found forward", map[string]interface{}{
+			"module":   "facade",
+			"method":   req.Method,
+			"accessId": id,
+			"path":     req.URL.Path,
+		})
+	} else {
+		notFound(id, c)
+		logger.Warn("not found forward", map[string]interface{}{
+			"module":   "facade",
+			"method":   req.Method,
+			"accessId": id,
+			"url":      req.URL.String(),
+		})
+	}
+}
+
 func facadeServe(ctx context.Context, addr string, forward func(facadeId string, request *facadeRequest) bool) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -58,50 +102,7 @@ func facadeServe(ctx context.Context, addr string, forward func(facadeId string,
 				})
 				c.Close()
 			} else {
-				go func() {
-					reader := newBufferedReader(c)
-					req, err := http.ReadRequest(bufio.NewReader(reader))
-					if err != nil {
-						logger.Warn("bad request", map[string]interface{}{
-							"module": "facade",
-						})
-						badRequest(c)
-						return
-					}
-
-					domainSep := strings.Split(req.Host, ".")
-					if len(domainSep) <= 1 {
-						logger.Warn("bad request", map[string]interface{}{
-							"module": "facade",
-							"method": req.Method,
-							"path":   req.URL.Path,
-							"host":   req.Host,
-						})
-						badRequest(c)
-						return
-					}
-					id := domainSep[0]
-
-					canForward := forward(id, &facadeRequest{Conn: reader.toBufferedConn(c), request: req})
-
-					if canForward {
-						logger.Debug("found forward", map[string]interface{}{
-							"module":   "facade",
-							"method":   req.Method,
-							"accessId": id,
-							"path":     req.URL.Path,
-						})
-					} else {
-						notFound(id, c)
-						logger.Warn("not found forward", map[string]interface{}{
-							"module":   "facade",
-							"method":   req.Method,
-							"accessId": id,
-							"path":     req.URL.Path,
-						})
-						return
-					}
-				}()
+				go handleConnection(c, forward)
 			}
 		}
 	}

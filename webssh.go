@@ -122,6 +122,8 @@ func Serve(_ctx context.Context, sshAddr, facadeAddr, domain string, sshKey []by
 			return
 		}
 
+	regenerating:
+
 		id, err := generateAccessId(session.RemoteAddr())
 
 		if nil != err {
@@ -131,13 +133,16 @@ func Serve(_ctx context.Context, sshAddr, facadeAddr, domain string, sshKey []by
 			session.Write([]byte("generating request id error"))
 			return
 		}
-		session.Context().SetValue(sshAccessIdKey, id)
 
+		if _, found := sessionHub.Load(id); found {
+			goto regenerating
+		}
+		sessionHub.Store(id, channel)
+		session.Context().SetValue(sshAccessIdKey, id)
 		logger.Debug("establishing ssh session", map[string]interface{}{
 			"module":   "session",
 			"accessId": id,
 		})
-		sessionHub.Store(id, channel)
 		channel.serve() // blocked with loop
 		sessionHub.Delete(id)
 		logger.Debug("clean ssh session", map[string]interface{}{

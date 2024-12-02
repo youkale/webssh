@@ -11,18 +11,53 @@ import (
 var (
 	// defaultLogger is the default logger instance
 	defaultLogger zerolog.Logger
+
+	// ANSI color codes
+	colorRed     = "\033[31m"
+	colorGreen   = "\033[32m"
+	colorYellow  = "\033[33m"
+	colorBlue    = "\033[34m"
+	colorMagenta = "\033[35m"
+	colorCyan    = "\033[36m"
+	colorReset   = "\033[0m"
 )
 
 func init() {
 	// Set default time format to RFC3339 with millisecond precision
 	zerolog.TimeFieldFormat = time.RFC3339Nano
 
-	// Create console writer
+	// Create console writer with custom formatting
 	consoleWriter := zerolog.ConsoleWriter{
 		Out:        os.Stdout,
 		TimeFormat: "2006-01-02 15:04:05.000",
 		FormatLevel: func(i interface{}) string {
-			return fmt.Sprintf("| %-6s|", i)
+			level := fmt.Sprintf("%s", i)
+			switch level {
+			case "debug":
+				return fmt.Sprintf("%s[DEBUG]%s", colorBlue, colorReset)
+			case "info":
+				return fmt.Sprintf("%s[INFO]%s", colorGreen, colorReset)
+			case "warn":
+				return fmt.Sprintf("%s[WARN]%s", colorYellow, colorReset)
+			case "error":
+				return fmt.Sprintf("%s[ERROR]%s", colorRed, colorReset)
+			case "fatal":
+				return fmt.Sprintf("%s[FATAL]%s", colorMagenta, colorReset)
+			default:
+				return fmt.Sprintf("%s[%s]%s", colorCyan, level, colorReset)
+			}
+		},
+		FormatMessage: func(i interface{}) string {
+			return fmt.Sprintf("| %s", i)
+		},
+		FormatFieldName: func(i interface{}) string {
+			return fmt.Sprintf("%s%s%s:", colorCyan, i, colorReset)
+		},
+		FormatFieldValue: func(i interface{}) string {
+			return fmt.Sprintf("%s%v%s", colorBlue, i, colorReset)
+		},
+		FormatTimestamp: func(i interface{}) string {
+			return fmt.Sprintf("%s%s%s |", colorGreen, i, colorReset)
 		},
 	}
 

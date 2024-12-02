@@ -1,97 +1,108 @@
-# Webs.sh
+# WebSSH
 
-## What is Webs.sh?
-Webs.sh is a simple、fast reverse proxy to help you expose a local server behind a NAT or firewall to the Internet.
+A fast reverse proxy tool based on the SSH protocol, built in Go.
 
-Using the ssh protocol means that Linux, macOS can quickly connect using the `ssh` command, and windows can connect using ?
+## Features
 
-```text
-                                            Request                                                                                      
-                            ┌────────────dispatch: foo────────────┐                                                                       
-                            │                                     │                                                                       
-                            │                                     │                                                                       
-┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─                    ┌ ─ ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─                                            
-              Host Node     │        │                            │    Exit Node              │                                           
-│                           ▼                            │        │                                                                       
-   ┌───────────┐       ┌────────┐    │      .─────.          ┌────────┐        ┌──────────────┴───────┐        .─────.        ┌─────────┐
-│  │   Node    │       │        │          ╱       ╲     │   │        │        │                      │       ╱       ╲       │         │
-   │http://127.│◀ ─ ─ ▶│ client │◀═══╬═══▶(   SSH   )◀══════▶│ Server │◀ ─ ─ ─▶│http(s)://foo.webs.sh │◀ ─ ─▶(internet )◀─ ─ ▶│ Browser │
-│  │0.0.1:3000 │       │        │          `.     ,'     │   │        │        │                      │       `.     ,'       │         │
-   └───────────┘       └────────┘    │       `───'           └────────┘        └──────────────┬───────┘         `───'         └─────────┘
-│                           │                            │        ▲                                                                       
-                            │        │                            │                           │                                           
-│                           │                            │        │                                                                       
- ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ┘                    ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘                                           
-                            │             Response                │                                                                       
-                            └────────────────OK───────────────────┘                                                                       
-                                                                                                                                                   
+### Terminal User Interface (TUI)
+- Beautiful and responsive terminal interface using Bubbletea
+- Dynamic tab management for multiple SSH sessions
+- Adaptive color themes (light/dark mode support)
+- Mouse and window resize support
+- Request tracking and management
+
+### Performance & Security
+- Fast and no client installation required (*nix like)
+- Secure random ID generation for sessions
+- Cryptographically secure token generation
+
+
+### SSH Capabilities
+- Multiple concurrent SSH connections
+- Secure key-based authentication
+- Port forwarding support
+- Session management
+
+## Quick Start
+
+1. Clone the repository:
+```shell
+git clone https://github.com/youkale/webssh.git
+cd webssh
 ```
 
-## Feature
-- Use ssh client, no need to install other clients
-- Support macOS、Linux
-- Windows putty
-
-## Quick start
-1. map the local listening port 8082 to the public network via webs.sh
-
+2. Install dependencies:
 ```shell
-$ ssh -R 443::8082 my.webs.sh
+go mod download
 ```
 
-2. After establishing a successful remote SSH connection, the public access URL is returned `https://0u6rq7.webs.sh`
-
-3. Access from the public network
-```shell
-$ curl https://0u6rq7.webs.sh
-```
-
-## Deploy
-Preparation:
-- domain name `webs.sh`
-- server IP `157.xxx.xx.xx`
-
-```shell
+3. Configure your settings in `config.json`:
+```json
 {
   "addr": ":443",
   "ssh_addr": ":22",
-  "domain": "Webs.sh", # change you domain
+  "domain": "webs.sh",
   "idle_timeout": 300,
-  "key": "-----BEGIN OPENSSH PRIVATE KEY-----\nxxxxxx\n-----END OPENSSH PRIVATE KEY-----\n"
+  "key": "YOUR_SSH_KEY"
 }
 ```
 
-1. Configure dns records
+4. Build and run:
 ```shell
-    A webs.sh 157.xxx.xx.xx
-    A *.webs.sh 157.xxx.xx.xx
-```
-2. Get cloudflare [token](https://dash.cloudflare.com/profile/api-tokens) to the cf_token field of config.json
-
-3. generator ssh key:
-```shell
-$ ssh-keygen -b 2048 -f Webs.sh_rsa
-$ cat webs.sh_rsa #Copy the contents of the generated private key to the key field of config.json 
-```
-4. start Webs.sh
-
-```shell
-#.
-#├── Webs.sh
-#└── config.json
-#
-
-$  ./Webs.sh
+make build
+./webssh
 ```
 
-## TODO
-- Support windows
+## Configuration
 
-## Developer
+### SSH Key Generation
+```shell
+ssh-keygen -b 2048 -f webs.sh_rsa
+cat webs.sh_rsa # Copy to config.json key field
+```
 
+### DNS Configuration
+```shell
+A webs.sh YOUR_SERVER_IP
+A *.webs.sh YOUR_SERVER_IP
+```
+
+### Logging Configuration
+The application uses structured logging with support for:
+- Console output with color-coded levels
+- File output with rotation
+- Multiple log levels (DEBUG, INFO, WARN, ERROR, FATAL)
+
+## Development
+
+### Project Structure
+```
+.
+├── cmd/           # Command line tools
+├── logger/        # Logging framework
+├── tui/          # Terminal User Interface
+│   ├── tabs.go   # Tab management
+│   └── tui.go    # Main TUI implementation
+├── util.go       # Utility functions
+└── webssh.go     # Core SSH implementation
+```
+
+### Key Dependencies
+- [Bubbletea](https://github.com/charmbracelet/bubbletea) - Terminal UI framework
+- [Lipgloss](https://github.com/charmbracelet/lipgloss) - Style definitions
+- [Zerolog](https://github.com/rs/zerolog) - Zero-allocation logging
+- [Bubblezone](https://github.com/charmbracelet/bubblezone) - Mouse zones
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## License
 [BSD](LICENSE)
 
-## Other
-[Deepl](https://www.deepl.com/translator)
+## Acknowledgments
+- [Charm](https://charm.sh/) for the amazing TUI tools

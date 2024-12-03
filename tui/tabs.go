@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -50,82 +49,69 @@ var (
 )
 
 type tabs struct {
-	id     string
-	height int
-	width  int
-
+	id       string
+	height   int
+	width    int
 	active   string
-	items    []string
-	requests []string // Store request history
+	tabItems map[string]tea.Model
+}
+
+type activeTabMsg struct {
+	tabName string
 }
 
 func (m tabs) Init() tea.Cmd {
 	return nil
 }
 
+func (m tabs) updateHistory(history httpExchange) {
+	m.tabItems["Requests"].Update(history)
+}
+
 func (m tabs) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+	case activeTabMsg:
+		m.active = msg.tabName
+	case httpExchange:
+		m.updateHistory(msg)
 	case tea.MouseMsg:
 		if msg.Action != tea.MouseActionRelease || msg.Button != tea.MouseButtonLeft {
 			return m, nil
 		}
-
-		for _, item := range m.items {
-			if zone.Get(m.id + item).InBounds(msg) {
-				m.active = item
+		for key := range m.tabItems {
+			if zone.Get(m.id + key).InBounds(msg) {
+				m.active = key
 				break
 			}
 		}
-
 		return m, nil
 	}
 	return m, nil
-}
-
-// AddRequest adds a new request to the history
-func (m *tabs) AddRequest(method, path, status string) {
-	request := fmt.Sprintf("%s %s %s", method, path, status)
-	m.requests = append(m.requests, request)
-}
-
-func (m *tabs) requestsView() string {
-	var requestList []string
-	requestStyle := lipgloss.NewStyle().
-		Foreground(secondary).
-		PaddingLeft(2)
-
-	for _, req := range m.requests {
-		requestList = append(requestList, requestStyle.Render(req))
-	}
-
-	return strings.Join(requestList, "\n")
 }
 
 func (m tabs) View() string {
 	var out []string
 
 	// Render tabs
-	for _, item := range m.items {
-		if item == m.active {
-			out = append(out, zone.Mark(m.id+item, activeTab.Render(item)))
+	for key := range m.tabItems {
+		if key == m.active {
+			out = append(out, zone.Mark(m.id+key, activeTab.Render(key)))
 		} else {
-			out = append(out, zone.Mark(m.id+item, tab.Render(item)))
+			out = append(out, zone.Mark(m.id+key, tab.Render(key)))
 		}
 	}
 	row := lipgloss.JoinHorizontal(lipgloss.Top, out...)
 	gap := tabGap.Render(strings.Repeat(" ", max(0, m.width-lipgloss.Width(row)-2)))
 	row = lipgloss.JoinHorizontal(lipgloss.Bottom, row, gap)
 
-	// If Connection tab is active, show requests
-	if m.active == "Request" && len(m.requests) > 0 {
+	if am, found := m.tabItems[m.active]; found {
 		return lipgloss.JoinVertical(
 			lipgloss.Left,
 			row,
-			m.requestsView(),
+			am.View(),
 		)
 	}
-
 	return row
 }

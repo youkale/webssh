@@ -8,6 +8,7 @@ import (
 	zone "github.com/lrstanley/bubblezone"
 	"github.com/youkale/webssh/logger"
 	"net/http"
+	"time"
 )
 
 var (
@@ -55,7 +56,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if msg.String() == "ctrl+c" {
 			quit := tea.Quit
-			m.quitFunc()
+			after := time.After(1 * time.Second)
+			go func() {
+				<-after
+				m.quitFunc()
+			}()
 			return m, quit
 		}
 	case tea.WindowSizeMsg:
@@ -64,6 +69,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		msg.Height -= 2
 		msg.Width -= 4
 		return m.propagate(msg), nil
+
+	case httpExchange:
+		m.tabs.Update(msg)
 	}
 
 	return m.propagate(msg), nil
@@ -102,10 +110,16 @@ func (m model) View() string {
 
 type Tui struct {
 	*tea.Program
+	exchangeChan chan *httpExchange
+}
+
+type httpExchange struct {
+	*http.Response
+	*http.Request
 }
 
 func (t *Tui) Notify(w *http.Response, r *http.Request) {
-
+	t.exchangeChan <- &httpExchange{Response: w, Request: r}
 }
 
 func (t *Tui) Start() error {
@@ -131,15 +145,15 @@ func NewPty(sess ssh.Session) (*Tui, error) {
 	zone.NewGlobal()
 
 	t := &tabs{
-		id:       zone.NewPrefix(),
-		height:   3,
-		active:   "Connection",
-		items:    []string{"Connection", "Requests", "About"},
-		requests: make([]string, 0),
+		id:     zone.NewPrefix(),
+		height: 3,
+		active: "Requests",
+		tabItems: map[string]tea.Model{
+			"Requests": newHistory(),
+		},
 	}
 
-	// Add some example requests
-	t.AddRequest("GET", "/api/connect", "200")
+	exChan := make(chan *httpExchange, 2)
 
 	m := &model{
 		quitFunc: func() {
@@ -153,11 +167,10 @@ func NewPty(sess ssh.Session) (*Tui, error) {
 	// Configure bubbletea program with SSH-specific options
 	p := tea.NewProgram(
 		m,
-		tea.WithAltScreen(),       // Use alternate screen buffer
-		tea.WithOutput(sess),      // Use SSH connection for output
-		tea.WithInput(sess),       // Use SSH connection for input
-		tea.WithMouseCellMotion(), // Enable mouse support
-		//tea.WithMouseAllMotion(),  // Track all mouse motion
+		tea.WithAltScreen(),
+		tea.WithOutput(sess),
+		tea.WithInput(sess),
+		tea.WithMouseCellMotion(),
 	)
 
 	go func() {
@@ -166,6 +179,8 @@ func NewPty(sess ssh.Session) (*Tui, error) {
 			case <-ctx.Done():
 				p.Quit()
 				return
+			case exch := <-exChan:
+				m.Update(exch)
 			case win := <-windowCh:
 				if m.width != win.Width || m.height != win.Height {
 					p.Send(tea.WindowSizeMsg{

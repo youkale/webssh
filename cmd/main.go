@@ -7,7 +7,6 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/youkale/webssh"
 	"github.com/youkale/webssh/logger"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -48,6 +47,6 @@ func main() {
 		webssh.Serve(ctx, config.SSHAddr, config.HttpAddr, config.Domain, []byte(config.PrivateKey))
 	}()
 	<-c
-	log.Print("(SSH Short)link will be shutdown")
+	logger.Warn("webssh will be shutdown", map[string]interface{}{})
 	cancelFunc()
 }

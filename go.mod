@@ -8,6 +8,7 @@ require (
 	github.com/gliderlabs/ssh v0.3.7
 	github.com/karlseguin/ccache/v3 v3.0.6
 	github.com/lrstanley/bubblezone v0.0.0-20240914071701-b48c55a5e78e
+	github.com/rs/zerolog v1.33.0
 	golang.org/x/crypto v0.29.0
 )
 
@@ -26,7 +27,6 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.15.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/rs/zerolog v1.33.0 // indirect
 	golang.org/x/sync v0.9.0 // indirect
 	golang.org/x/sys v0.27.0 // indirect
 	golang.org/x/text v0.20.0 // indirect

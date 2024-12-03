@@ -27,5 +27,6 @@ func (h *history) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (h *history) View() string {
+
 	return ""
 }

@@ -27,14 +27,12 @@ type facadeRequest struct {
 	request *http.Request
 }
 
-func newForwarder(session ssh.Session, host string, port uint32) (*forwarder, error) {
+func newForwarder(session ssh.Session) (*forwarder, error) {
 	ctx, cancelFunc := context.WithCancel(session.Context())
 	return &forwarder{
 		context:    ctx,
 		cancelFunc: cancelFunc,
 		sess:       session,
-		bindAddr:   host,
-		bindPort:   port,
 		reqChan:    make(chan *facadeRequest, 4),
 	}, nil
 }
@@ -52,6 +50,7 @@ func (ch *forwarder) forward(request *facadeRequest) {
 
 func (ch *forwarder) serve() {
 	accessId := ch.sess.Context().Value(sshAccessIdKey).(string)
+	fwdReq := ch.sess.Context().Value(sshRequestForward).(*remoteForwardRequest)
 	remoteAddr := ch.sess.RemoteAddr().String()
 	svrConn := ch.sess.Context().Value(ssh.ContextKeyConn).(*gossh.ServerConn)
 
@@ -82,8 +81,8 @@ func (ch *forwarder) serve() {
 			originAddr, originPortStr, _ := net.SplitHostPort(req.RemoteAddr().String())
 			originPort, _ := strconv.Atoi(originPortStr)
 			payload := gossh.Marshal(&remoteForwardChannelData{
-				DestAddr:   ch.bindAddr,
-				DestPort:   ch.bindPort,
+				DestAddr:   fwdReq.BindAddr,
+				DestPort:   fwdReq.BindPort,
 				OriginAddr: originAddr,
 				OriginPort: uint32(originPort),
 			})
@@ -93,7 +92,7 @@ func (ch *forwarder) serve() {
 			if err != nil {
 				logger.Error("open forward channel", err, map[string]interface{}{
 					"module":     "session",
-					"sessionId":  accessId,
+					"accessId":   accessId,
 					"remoteAddr": remoteAddr,
 				})
 				return
@@ -108,6 +107,8 @@ func (ch *forwarder) serve() {
 
 			reader := sshChan.bufferedReader()
 			response, err := http.ReadResponse(bufio.NewReader(reader), req.request)
+
+			pty.Notify(response, req.request)
 
 			logger.Debug("ssh <-> facade", map[string]interface{}{
 				"module":   "session",

@@ -87,7 +87,13 @@ func facadeServe(ctx context.Context, addr string, forward func(facadeId string,
 			"module":  "facade",
 			"address": addr,
 		})
+		return
 	}
+	defer func() {
+		if nil != ln {
+			ln.Close()
+		}
+	}()
 
 	for {
 		select {

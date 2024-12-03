@@ -2,6 +2,7 @@ package webssh
 
 import (
 	"context"
+	"fmt"
 	"github.com/gliderlabs/ssh"
 	"github.com/youkale/webssh/logger"
 	gossh "golang.org/x/crypto/ssh"
@@ -18,6 +19,7 @@ const (
 	sshRequestTypeForward       = "tcpip-forward"
 	sshRequestTypeCancelForward = "cancel-tcpip-forward"
 	sshAccessIdKey              = "sshAccessId"
+	sshRequestForward           = "sshRequestForward"
 )
 
 type remoteForwardSuccess struct {
@@ -41,10 +43,16 @@ func requestHandler(bindPort uint32) func(ctx ssh.Context, _ *ssh.Server, req *g
 			var reqPayload remoteForwardRequest
 			if err := gossh.Unmarshal(req.Payload, &reqPayload); err != nil {
 				logger.Error("Unmarshal failed", err, map[string]interface{}{
-					"module": "serve",
+					"module":  "serve",
+					"payload": reqPayload,
 				})
 				return false, []byte{}
 			}
+			logger.Debug("Unmarshal forward request", map[string]interface{}{
+				"module":  "serve",
+				"payload": fmt.Sprintf("%v", reqPayload),
+			})
+			ctx.SetValue(sshRequestForward, &reqPayload)
 			return true, gossh.Marshal(&remoteForwardSuccess{bindPort})
 
 		case sshRequestTypeCancelForward:
@@ -99,20 +107,12 @@ func Serve(_ctx context.Context, sshAddr, facadeAddr, domain string, sshKey []by
 		return
 	}
 
-	facadeHost, facadePort, err := parseHostAddr(facadeAddr)
-	if err != nil {
-		logger.Error("parse net.Addr failed", err, map[string]interface{}{
-			"module": "serve",
-		})
-		return
-	}
-
 	ctx, cancelFunc := context.WithCancel(_ctx)
 
 	server := newSshServer(sshAddr, sshKey, sshPort)
 
 	server.Handler = func(session ssh.Session) {
-		channel, err := newForwarder(session, facadeHost, facadePort)
+		channel, err := newForwarder(session)
 		if nil != err {
 			logger.Error("create forward", err, map[string]interface{}{
 				"module":     "serve",

@@ -180,7 +180,7 @@ func NewPty(sess ssh.Session) (*Tui, error) {
 				p.Quit()
 				return
 			case exch := <-exChan:
-				m.Update(exch)
+				p.Send(exch)
 			case win := <-windowCh:
 				if m.width != win.Width || m.height != win.Height {
 					p.Send(tea.WindowSizeMsg{
@@ -191,5 +191,5 @@ func NewPty(sess ssh.Session) (*Tui, error) {
 			}
 		}
 	}()
-	return &Tui{Program: p}, nil
+	return &Tui{Program: p, exchangeChan: exChan}, nil
 }

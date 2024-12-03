@@ -113,16 +113,16 @@ func TestGenerateAccessId(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := generateAccessId(tt.raddr)
+			got, err := withAddrGenerateAccessId(tt.raddr)
 			if err != nil {
-				t.Errorf("generateAccessId() error = %v", err)
+				t.Errorf("withAddrGenerateAccessId() error = %v", err)
 				return
 			}
 			if len(got) != tt.wantLen {
-				t.Errorf("generateAccessId() got length = %v, want %v", len(got), tt.wantLen)
+				t.Errorf("withAddrGenerateAccessId() got length = %v, want %v", len(got), tt.wantLen)
 			}
 			if !containsOnlyChars(got, AlphaNum) {
-				t.Errorf("generateAccessId() got = %v, contains invalid characters", got)
+				t.Errorf("withAddrGenerateAccessId() got = %v, contains invalid characters", got)
 			}
 		})
 	}
@@ -132,10 +132,35 @@ func TestGenerateAccessId(t *testing.T) {
 		IP:   net.ParseIP("127.0.0.1"),
 		Port: 8080,
 	}
-	first, _ := generateAccessId(tcpAddr)
-	second, _ := generateAccessId(tcpAddr)
+	first, _ := withAddrGenerateAccessId(tcpAddr)
+	second, _ := withAddrGenerateAccessId(tcpAddr)
 	if first != second {
-		t.Error("generateAccessId() cache not working, got different values for same TCP address")
+		t.Error("withAddrGenerateAccessId() cache not working, got different values for same TCP address")
+	}
+}
+
+func TestWithIPGenerateAccessId(t *testing.T) {
+	ip := net.ParseIP("127.0.0.1")
+	id, err := withIPGenerateAccessId(ip)
+	if err != nil {
+		t.Errorf("withIPGenerateAccessId() error = %v", err)
+	}
+	if len(id) != 8 {
+		t.Errorf("withIPGenerateAccessId() got length = %v, want 8", len(id))
+	}
+}
+
+func TestWithAddrGenerateAccessId(t *testing.T) {
+	addr := &net.TCPAddr{
+		IP:   net.ParseIP("127.0.0.1"),
+		Port: 8080,
+	}
+	id, err := withAddrGenerateAccessId(addr)
+	if err != nil {
+		t.Errorf("withAddrGenerateAccessId() error = %v", err)
+	}
+	if len(id) != 8 {
+		t.Errorf("withAddrGenerateAccessId() got length = %v, want 8", len(id))
 	}
 }
 
@@ -201,6 +226,20 @@ func TestParseHostAddr(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestParseHostAddrSimple(t *testing.T) {
+	addr := "127.0.0.1:8080"
+	host, port, err := parseHostAddr(addr)
+	if err != nil {
+		t.Errorf("parseHostAddr() error = %v", err)
+	}
+	if host != "127.0.0.1" {
+		t.Errorf("parseHostAddr() got host = %v, want 127.0.0.1", host)
+	}
+	if port != 8080 {
+		t.Errorf("parseHostAddr() got port = %v, want 8080", port)
 	}
 }
 

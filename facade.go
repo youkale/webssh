@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/youkale/webssh/logger"
+	"github.com/youkale/echogy/logger"
 	"net"
 	"net/http"
 	"strings"
@@ -83,7 +83,7 @@ func handleConnection(c net.Conn, forward func(facadeId string, request *facadeR
 func facadeServe(ctx context.Context, addr string, forward func(facadeId string, request *facadeRequest) bool) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		logger.Error("start Listen", err, map[string]interface{}{
+		logger.Fatal("start Listen", err, map[string]interface{}{
 			"module":  "facade",
 			"address": addr,
 		})

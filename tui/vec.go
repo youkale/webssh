@@ -48,7 +48,7 @@ func (q *fixedLengthVec) Items() []interface{} {
 	}
 	result := make([]interface{}, q.size)
 	for i := 0; i < q.size; i++ {
-		idx := (q.head + i) % q.len
+		idx := (q.tail - i + (q.len - 1)) % q.len
 		result[i] = q.items[idx]
 	}
 	return result

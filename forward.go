@@ -3,9 +3,10 @@ package webssh
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"github.com/gliderlabs/ssh"
-	"github.com/youkale/webssh/logger"
-	"github.com/youkale/webssh/tui"
+	"github.com/youkale/echogy/logger"
+	"github.com/youkale/echogy/tui"
 	gossh "golang.org/x/crypto/ssh"
 	"io"
 	"net"
@@ -17,6 +18,8 @@ type forwarder struct {
 	context    context.Context
 	cancelFunc context.CancelFunc
 	sess       ssh.Session
+	accessId   string
+	pty        *tui.Tui
 	reqChan    chan *facadeRequest
 	bindAddr   string
 	bindPort   uint32
@@ -27,11 +30,19 @@ type facadeRequest struct {
 	request *http.Request
 }
 
-func newForwarder(session ssh.Session) (*forwarder, error) {
+func newForwarder(accessId, domain string, session ssh.Session) (*forwarder, error) {
+	pty, err := tui.NewPty(session, map[string]string{
+		"access": fmt.Sprintf("%s.%s", accessId, domain),
+	})
+	if err != nil {
+		return nil, err
+	}
 	ctx, cancelFunc := context.WithCancel(session.Context())
 	return &forwarder{
 		context:    ctx,
 		cancelFunc: cancelFunc,
+		accessId:   accessId,
+		pty:        pty,
 		sess:       session,
 		reqChan:    make(chan *facadeRequest, 4),
 	}, nil
@@ -44,30 +55,27 @@ type remoteForwardChannelData struct {
 	OriginPort uint32
 }
 
-func (ch *forwarder) forward(request *facadeRequest) {
-	ch.reqChan <- request
+func (fwd *forwarder) forward(request *facadeRequest) {
+	fwd.reqChan <- request
 }
 
-func (ch *forwarder) serve() {
-	accessId := ch.sess.Context().Value(sshAccessIdKey).(string)
-	fwdReq := ch.sess.Context().Value(sshRequestForward).(*remoteForwardRequest)
-	remoteAddr := ch.sess.RemoteAddr().String()
-	svrConn := ch.sess.Context().Value(ssh.ContextKeyConn).(*gossh.ServerConn)
+func (fwd *forwarder) serve() {
+	fwdReq := fwd.sess.Context().Value(sshRequestForward).(*remoteForwardRequest)
+	remoteAddr := fwd.sess.RemoteAddr().String()
+	svrConn := fwd.sess.Context().Value(ssh.ContextKeyConn).(*gossh.ServerConn)
 
 	logger.Info("created forward session", map[string]interface{}{
 		"module":     "session",
-		"accessId":   accessId,
+		"accessId":   fwd.accessId,
 		"remoteAddr": remoteAddr,
 	})
 
-	pty, _ := tui.NewPty(ch.sess)
-
 	go func() {
-		err := pty.Start()
+		err := fwd.pty.Start()
 		if err != nil {
 			logger.Error("start pty session", err, map[string]interface{}{
 				"module":     "session",
-				"accessId":   accessId,
+				"accessId":   fwd.accessId,
 				"remoteAddr": remoteAddr,
 			})
 		}
@@ -75,49 +83,56 @@ func (ch *forwarder) serve() {
 
 	for {
 		select {
-		case <-ch.context.Done():
+		case <-fwd.context.Done():
 			return
-		case req := <-ch.reqChan:
-			originAddr, originPortStr, _ := net.SplitHostPort(req.RemoteAddr().String())
-			originPort, _ := strconv.Atoi(originPortStr)
+		case facadeReq := <-fwd.reqChan:
+			facadeRequestAddr, facadeRequestPortStr, _ := net.SplitHostPort(facadeReq.RemoteAddr().String())
+			facadePort, _ := strconv.Atoi(facadeRequestPortStr)
 			payload := gossh.Marshal(&remoteForwardChannelData{
 				DestAddr:   fwdReq.BindAddr,
 				DestPort:   fwdReq.BindPort,
-				OriginAddr: originAddr,
-				OriginPort: uint32(originPort),
+				OriginAddr: facadeRequestAddr,
+				OriginPort: uint32(facadePort),
 			})
 			gosshChan, _, err := svrConn.OpenChannel("forwarded-tcpip", payload)
-			sshChan := wrapChannelConn(ch.sess, gosshChan)
+			sshChan := wrapChannelConn(fwd.sess, gosshChan)
 
 			if err != nil {
 				logger.Error("open forward channel", err, map[string]interface{}{
 					"module":     "session",
-					"accessId":   accessId,
+					"accessId":   fwd.accessId,
 					"remoteAddr": remoteAddr,
 				})
 				return
 			}
-			go func() {
-				defer func() {
-					req.Close()
-					sshChan.Close()
-				}()
-				io.Copy(sshChan, req)
-			}()
+			go fwd.doCopy(sshChan, facadeReq)
+			io.Copy(sshChan, facadeReq)
+		}
+	}
+}
 
-			reader := sshChan.bufferedReader()
-			response, err := http.ReadResponse(bufio.NewReader(reader), req.request)
-
-			pty.Notify(response, req.request)
-
+func (fwd *forwarder) doCopy(sessConn *wrappedConn, facadeReq *facadeRequest) {
+	defer func() {
+		facadeReq.Close()
+		sessConn.Close()
+	}()
+	if nil != facadeReq.request {
+		reader := sessConn.bufferedReader()
+		response, err := http.ReadResponse(bufio.NewReader(reader), facadeReq.request)
+		if nil != err {
+			return
+		} else {
+			fwd.pty.Notify(response, facadeReq.request)
 			logger.Debug("ssh <-> facade", map[string]interface{}{
 				"module":   "session",
-				"accessId": accessId,
-				"method":   req.request.Method,
-				"path":     req.request.URL.Path,
+				"accessId": fwd.accessId,
+				"method":   facadeReq.request.Method,
+				"path":     facadeReq.request.URL.Path,
 				"status":   response.StatusCode,
 			})
-			io.Copy(req, reader.toBufferedConn(sshChan))
+			io.Copy(facadeReq, reader.toBufferedConn(sessConn))
 		}
+	} else {
+		io.Copy(facadeReq, sessConn)
 	}
 }

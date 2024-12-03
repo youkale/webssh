@@ -1,4 +1,6 @@
 {
+  "pprof": true,
+  "logLevel": "debug",
   "httpAddr": "localhost:7777",
   "sshAddr": "localhost:2222",
   "domain": "webs.sh",

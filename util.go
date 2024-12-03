@@ -52,22 +52,33 @@ func generateRandomString(length int, charset string) (string, error) {
 
 var cache = ccache.New(ccache.Configure[string]().MaxSize(1_000_000))
 
-func generateAccessId(raddr net.Addr) (string, error) {
+func withIPGenerateAccessId(ip net.IP) (string, error) {
+	cacheKey := ip.String()
+	fetch, err := cache.Fetch(cacheKey, time.Hour*12, func() (string, error) {
+		return generateRandomString(8, AlphaNum)
+	})
+	if nil != fetch && nil == err {
+		return fetch.Value(), nil
+	} else {
+		return generateRandomString(8, AlphaNum)
+	}
+}
+
+func withAddrGenerateAccessId(raddr net.Addr) (string, error) {
 	switch raddr.(type) {
 	case *net.TCPAddr:
 		addr := raddr.(*net.TCPAddr)
-		cacheKey := addr.IP.String()
-		fetch, err := cache.Fetch(cacheKey, time.Hour*12, func() (string, error) {
-			return generateRandomString(8, AlphaNum)
-		})
-		if nil != fetch && nil == err {
-			return fetch.Value(), nil
-		} else {
-			return generateRandomString(8, AlphaNum)
-		}
+		return withIPGenerateAccessId(addr.IP)
+	case *net.UDPAddr:
+		addr := raddr.(*net.UDPAddr)
+		return withIPGenerateAccessId(addr.IP)
 	default:
-		return generateRandomString(8, AlphaNum)
+		return "", fmt.Errorf("unknown address type: %T", raddr)
 	}
+}
+
+func generateAccessId() (string, error) {
+	return generateRandomString(8, AlphaNum)
 }
 
 func parseHostAddr(addr string) (string, uint32, error) {

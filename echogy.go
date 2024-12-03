@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/gliderlabs/ssh"
-	"github.com/youkale/webssh/logger"
+	"github.com/youkale/echogy/logger"
 	gossh "golang.org/x/crypto/ssh"
 	"sync"
 )
@@ -72,7 +72,7 @@ func requestHandler(bindPort uint32) func(ctx ssh.Context, _ *ssh.Server, req *g
 	}
 }
 
-func newSshServer(sshAddr string, sshKey []byte, bindPort uint32) *ssh.Server {
+func newSshServer(sshAddr string, facadeDomain string, sshKey []byte, bindPort uint32) *ssh.Server {
 	key, _ := gossh.ParseRawPrivateKey(sshKey)
 	signer, _ := gossh.NewSignerFromKey(key)
 
@@ -85,6 +85,7 @@ func newSshServer(sshAddr string, sshKey []byte, bindPort uint32) *ssh.Server {
 		PtyCallback: func(ctx ssh.Context, pty ssh.Pty) bool {
 			return true
 		},
+		Handler: sessionHandler(facadeDomain),
 		ReversePortForwardingCallback: func(ctx ssh.Context, bindHost string, bindPort uint32) bool {
 			return true
 		},
@@ -95,24 +96,25 @@ func newSshServer(sshAddr string, sshKey []byte, bindPort uint32) *ssh.Server {
 	}
 }
 
-func Serve(_ctx context.Context, sshAddr, facadeAddr, domain string, sshKey []byte) {
+func sessionHandler(domain string) func(session ssh.Session) {
+	return func(session ssh.Session) {
+		id, err := withAddrGenerateAccessId(session.RemoteAddr())
+	regenerating:
+		if nil != err {
+			logger.Error("generating accessId", err, map[string]interface{}{
+				"module": "serve",
+			})
+			session.Write([]byte("generating accessId error"))
+			return
+		}
 
-	wg := sync.WaitGroup{}
+		if _, found := sessionHub.Load(id); found {
+			id, err = generateAccessId()
+			goto regenerating
+		}
 
-	_, sshPort, err := parseHostAddr(sshAddr)
-	if err != nil {
-		logger.Error("parse net.Addr failed", err, map[string]interface{}{
-			"module": "serve",
-		})
-		return
-	}
+		channel, err := newForwarder(id, domain, session)
 
-	ctx, cancelFunc := context.WithCancel(_ctx)
-
-	server := newSshServer(sshAddr, sshKey, sshPort)
-
-	server.Handler = func(session ssh.Session) {
-		channel, err := newForwarder(session)
 		if nil != err {
 			logger.Error("create forward", err, map[string]interface{}{
 				"module":     "serve",
@@ -120,24 +122,8 @@ func Serve(_ctx context.Context, sshAddr, facadeAddr, domain string, sshKey []by
 			})
 			return
 		}
-
-	regenerating:
-
-		id, err := generateAccessId(session.RemoteAddr())
-
-		if nil != err {
-			logger.Error("generating sessionId", err, map[string]interface{}{
-				"module": "serve",
-			})
-			session.Write([]byte("generating request id error"))
-			return
-		}
-
-		if _, found := sessionHub.Load(id); found {
-			goto regenerating
-		}
-		sessionHub.Store(id, channel)
 		session.Context().SetValue(sshAccessIdKey, id)
+		sessionHub.Store(id, channel)
 		logger.Debug("establishing ssh session", map[string]interface{}{
 			"module":   "session",
 			"accessId": id,
@@ -150,6 +136,24 @@ func Serve(_ctx context.Context, sshAddr, facadeAddr, domain string, sshKey []by
 		})
 		session.Close()
 	}
+}
+
+func Serve(_ctx context.Context, sshAddr, facadeAddr, facadeDomain string, sshKey []byte) {
+
+	wg := sync.WaitGroup{}
+
+	_, sshPort, err := parseHostAddr(sshAddr)
+	if err != nil {
+		logger.Fatal("parse net.Addr failed", err, map[string]interface{}{
+			"module": "serve",
+		})
+		return
+	}
+
+	ctx, cancelFunc := context.WithCancel(_ctx)
+
+	server := newSshServer(sshAddr, facadeDomain, sshKey, sshPort)
+
 	wg.Add(1)
 	go func() {
 		wg.Done()
@@ -162,7 +166,7 @@ func Serve(_ctx context.Context, sshAddr, facadeAddr, domain string, sshKey []by
 			return false
 		})
 	}()
-	logger.Info("started facade server", map[string]interface{}{
+	logger.Warn("started facade server", map[string]interface{}{
 		"module":  "serve",
 		"address": facadeAddr,
 	})
@@ -171,16 +175,16 @@ func Serve(_ctx context.Context, sshAddr, facadeAddr, domain string, sshKey []by
 	wg.Add(1)
 	go func() {
 		wg.Done()
-		logger.Info("starting ssh server", map[string]interface{}{
-			"module":  "serve",
-			"address": sshAddr,
-		})
 		err := server.ListenAndServe()
-		logger.Error("starting ssh server", err, map[string]interface{}{
+		logger.Fatal("starting ssh server", err, map[string]interface{}{
 			"module":  "serve",
 			"address": sshAddr,
 		})
 	}()
+	logger.Warn("started ssh server", map[string]interface{}{
+		"module":  "serve",
+		"address": sshAddr,
+	})
 	wg.Wait()
 
 	<-_ctx.Done()

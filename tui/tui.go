@@ -2,27 +2,49 @@ package tui
 
 import (
 	"errors"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gliderlabs/ssh"
 	zone "github.com/lrstanley/bubblezone"
-	"github.com/youkale/webssh/logger"
-	"net/http"
-	"time"
+	"github.com/muesli/termenv"
+	"github.com/youkale/echogy/logger"
 )
 
 var (
-	subtle    = lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#383838"}
-	highlight = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
-	special   = lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#73F59F"}
+	// Modern color palette
+	subtle    = lipgloss.AdaptiveColor{Light: "#666666", Dark: "#4A4A4A"}
+	highlight = lipgloss.AdaptiveColor{Light: "#2188ff", Dark: "#58a6ff"} // GitHub-like blue
+	special   = lipgloss.AdaptiveColor{Light: "#28a745", Dark: "#3fb950"} // GitHub-like green
 
 	// Additional theme colors
-	primary    = lipgloss.AdaptiveColor{Light: "#2E8B57", Dark: "#00FF7F"} // Sea Green / Spring Green
-	secondary  = lipgloss.AdaptiveColor{Light: "#666666", Dark: "#A0A0A0"}
-	accent     = lipgloss.AdaptiveColor{Light: "#3CB371", Dark: "#98FB98"} // Medium Sea Green / Pale Green
-	background = lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#1A1A1A"}
-	border     = lipgloss.AdaptiveColor{Light: "#E0E0E0", Dark: "#4A4A4A"}
+	primary    = lipgloss.AdaptiveColor{Light: "#1a73e8", Dark: "#58a6ff"} // Modern blue
+	secondary  = lipgloss.AdaptiveColor{Light: "#666666", Dark: "#8b949e"} // Subtle gray
+	accent     = lipgloss.AdaptiveColor{Light: "#00c853", Dark: "#3fb950"} // Vibrant green
+	background = lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#0d1117"} // GitHub-like dark theme
+	border     = lipgloss.AdaptiveColor{Light: "#e1e4e8", Dark: "#30363d"} // Subtle border
 )
+
+// Table styles
+var (
+	headerStyle = lipgloss.NewStyle().
+		Foreground(primary).
+		Bold(true).
+		PaddingLeft(2)
+
+	rowStyle = lipgloss.NewStyle().
+		Foreground(secondary).
+		PaddingLeft(2)
+)
+
+type notification interface {
+	tea.Model
+	notify(message interface{})
+}
 
 type model struct {
 	height   int
@@ -56,11 +78,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if msg.String() == "ctrl+c" {
 			quit := tea.Quit
-			after := time.After(1 * time.Second)
-			go func() {
-				<-after
-				m.quitFunc()
-			}()
+			m.quitFunc()
 			return m, quit
 		}
 	case tea.WindowSizeMsg:
@@ -69,9 +87,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		msg.Height -= 2
 		msg.Width -= 4
 		return m.propagate(msg), nil
-
-	case httpExchange:
-		m.tabs.Update(msg)
 	}
 
 	return m.propagate(msg), nil
@@ -82,7 +97,7 @@ func (m *model) propagate(msg tea.Msg) tea.Model {
 	m.tabs, _ = m.tabs.Update(msg)
 
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
-		msg.Height -= m.tabs.(tabs).height
+		msg.Height -= m.tabs.(*tabs).height
 		return m
 	}
 
@@ -94,18 +109,19 @@ func (m model) View() string {
 		return ""
 	}
 
-	s := lipgloss.NewStyle().MaxHeight(m.height).MaxWidth(m.width).Padding(1, 2, 1, 2)
+	s := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		Width(m.width-2). // Account for border
+		Height(m.height-2). // Account for border
+		Padding(0, 1)
 
-	return zone.Scan(s.Render(lipgloss.JoinVertical(lipgloss.Top,
-		m.tabs.View(), "",
-		lipgloss.PlaceHorizontal(
-			m.width, lipgloss.Center,
-			lipgloss.JoinHorizontal(
-				lipgloss.Top,
-			),
-			lipgloss.WithWhitespaceChars(" "),
-		),
-	)))
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		"",
+		m.tabs.View(),
+		"",
+	)
+
+	return zone.Scan(s.Render(content))
 }
 
 type Tui struct {
@@ -133,46 +149,95 @@ func (t *Tui) Start() error {
 	return nil
 }
 
-func NewPty(sess ssh.Session) (*Tui, error) {
+type sshEnviron struct {
+	environ []string
+}
+
+func (s *sshEnviron) Getenv(key string) string {
+	for _, v := range s.environ {
+		if strings.HasPrefix(v, key+"=") {
+			return v[len(key)+1:]
+		}
+	}
+	return ""
+}
+
+func (s *sshEnviron) Environ() []string {
+	return s.environ
+}
+
+const (
+	maxWidth  = 80
+	maxHeight = 220
+)
+
+// NewPty creates a new terminal UI instance
+func NewPty(sess ssh.Session, addr map[string]string) (*Tui, error) {
 	pty, windowCh, hasPty := sess.Pty()
 
 	if !hasPty {
 		return nil, errors.New("no pty")
 	}
 
+	environ := sess.Environ()
+	environ = append(environ, fmt.Sprintf("TERM=%s", pty.Term))
+
+	// Add color support detection
+	if !termenv.EnvNoColor() {
+		switch {
+		case strings.Contains(strings.ToLower(pty.Term), "256color"):
+			environ = append(environ, "COLORTERM=256color")
+		case strings.Contains(strings.ToLower(pty.Term), "color"):
+			environ = append(environ, "COLORTERM=color")
+		}
+		// Add FORCE_COLOR to ensure color output
+		environ = append(environ, "FORCE_COLOR=true")
+	}
+
 	ctx := sess.Context()
+
+	// Create renderer with color support
+	renderer := lipgloss.NewRenderer(sess,
+		termenv.WithUnsafe(),
+		termenv.WithEnvironment(&sshEnviron{environ}),
+	)
 
 	zone.NewGlobal()
 
-	t := &tabs{
-		id:     zone.NewPrefix(),
-		height: 3,
-		active: "Requests",
-		tabItems: map[string]tea.Model{
-			"Requests": newHistory(),
+	// Create tabs with initial items
+	t := newTabs(pty.Window.Height-3,
+		TabItem{
+			Name:  "Summary",
+			Model: &summary{addresses: addr},
 		},
-	}
+		TabItem{
+			Name:  "Requests",
+			Model: newHistory(),
+		},
+	)
 
 	exChan := make(chan *httpExchange, 2)
 
 	m := &model{
 		quitFunc: func() {
-			sess.Close()
+			time.AfterFunc(1*time.Second, func() {
+				sess.Close()
+			})
 		},
-		width:  pty.Window.Width,
-		height: pty.Window.Height,
-		tabs:   t,
+		tabs: t,
 	}
 
 	// Configure bubbletea program with SSH-specific options
 	p := tea.NewProgram(
 		m,
 		tea.WithAltScreen(),
-		tea.WithOutput(sess),
+		tea.WithOutput(renderer.Output()),
 		tea.WithInput(sess),
 		tea.WithMouseCellMotion(),
+		tea.WithContext(ctx),
 	)
 
+	// Start window size monitoring
 	go func() {
 		for {
 			select {
@@ -180,16 +245,18 @@ func NewPty(sess ssh.Session) (*Tui, error) {
 				p.Quit()
 				return
 			case exch := <-exChan:
-				p.Send(exch)
+				t.notify(exch)
+				p.Send(tea.ShowCursor())
 			case win := <-windowCh:
 				if m.width != win.Width || m.height != win.Height {
 					p.Send(tea.WindowSizeMsg{
-						Width:  win.Width,
-						Height: win.Height,
+						Width:  min(maxWidth, win.Width),
+						Height: min(maxHeight, win.Height),
 					})
 				}
 			}
 		}
 	}()
+
 	return &Tui{Program: p, exchangeChan: exChan}, nil
 }

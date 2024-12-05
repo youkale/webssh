@@ -32,13 +32,13 @@ var (
 // Table styles
 var (
 	headerStyle = lipgloss.NewStyle().
-		Foreground(primary).
-		Bold(true).
-		PaddingLeft(2)
+			Foreground(primary).
+			Bold(true).
+			PaddingLeft(2)
 
 	rowStyle = lipgloss.NewStyle().
-		Foreground(secondary).
-		PaddingLeft(2)
+			Foreground(secondary).
+			PaddingLeft(2)
 )
 
 type notification interface {
@@ -111,7 +111,7 @@ func (m model) View() string {
 
 	s := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		Width(m.width-2). // Account for border
+		Width(m.width-2).   // Account for border
 		Height(m.height-2). // Account for border
 		Padding(0, 1)
 

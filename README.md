@@ -1,34 +1,28 @@
-# WebSSH
+# Echogy
 
-A fast reverse proxy tool based on the SSH protocol, built in Go.
+A lightweight and efficient SSH reverse proxy tool implemented in Go, featuring a beautiful Terminal User Interface (TUI).
 
 ## Features
 
 ### Terminal User Interface (TUI)
-- Beautiful and responsive terminal interface using Bubbletea
-- Dynamic tab management for multiple SSH sessions
-- Adaptive color themes (light/dark mode support)
-- Mouse and window resize support
-- Request tracking and management
+- Modern and responsive terminal interface
+- SSH session management
+- Real-time connection status monitoring
+- User-friendly interface for managing SSH connections
 
-### Performance & Security
-- Fast and no client installation required (*nix like)
-- Secure random ID generation for sessions
-- Cryptographically secure token generation
-
-
-### SSH Capabilities
-- Multiple concurrent SSH connections
-- Secure key-based authentication
-- Port forwarding support
-- Session management
+### Core Features
+- SSH reverse proxy functionality
+- Multiple concurrent SSH connections support
+- TCP port forwarding
+- Secure session management
+- Built-in logging system
 
 ## Quick Start
 
 1. Clone the repository:
 ```shell
-git clone https://github.com/youkale/webssh.git
-cd webssh
+git clone https://github.com/youkale/echogy.git
+cd echogy
 ```
 
 2. Install dependencies:
@@ -41,7 +35,7 @@ go mod download
 {
   "addr": ":443",
   "ssh_addr": ":22",
-  "domain": "webs.sh",
+  "domain": "your-domain.com",
   "idle_timeout": 300,
   "key": "YOUR_SSH_KEY"
 }
@@ -50,48 +44,43 @@ go mod download
 4. Build and run:
 ```shell
 make build
-./webssh
+./echogy
 ```
 
-## Configuration
-
-### SSH Key Generation
-```shell
-ssh-keygen -b 2048 -f webs.sh_rsa
-cat webs.sh_rsa # Copy to config.json key field
-```
-
-### DNS Configuration
-```shell
-A webs.sh YOUR_SERVER_IP
-A *.webs.sh YOUR_SERVER_IP
-```
-
-### Logging Configuration
-The application uses structured logging with support for:
-- Console output with color-coded levels
-- File output with rotation
-- Multiple log levels (DEBUG, INFO, WARN, ERROR, FATAL)
-
-## Development
-
-### Project Structure
+## Project Structure
 ```
 .
 ├── cmd/           # Command line tools
 ├── logger/        # Logging framework
-├── tui/          # Terminal User Interface
-│   ├── tabs.go   # Tab management
-│   └── tui.go    # Main TUI implementation
-├── util.go       # Utility functions
-└── webssh.go     # Core SSH implementation
+├── tui/          # Terminal User Interface components
+├── pprof/        # Performance profiling
+├── echogy.go     # Core SSH implementation
+├── conn.go       # Connection management
+├── facade.go     # Facade pattern implementation
+├── forward.go    # Port forwarding logic
+└── util.go       # Utility functions
 ```
 
-### Key Dependencies
-- [Bubbletea](https://github.com/charmbracelet/bubbletea) - Terminal UI framework
-- [Lipgloss](https://github.com/charmbracelet/lipgloss) - Style definitions
-- [Zerolog](https://github.com/rs/zerolog) - Zero-allocation logging
-- [Bubblezone](https://github.com/charmbracelet/bubblezone) - Mouse zones
+### Key Components
+- SSH Server: Handles SSH connections and session management
+- Forward Proxy: Manages TCP port forwarding
+- TUI: Provides an interactive terminal interface
+- Logger: Structured logging with multiple output formats
+
+## Configuration
+
+### SSH Key Setup
+```shell
+ssh-keygen -b 2048 -f echogy_rsa
+# Copy the private key content to config.json
+```
+
+### Domain Configuration
+```shell
+# DNS A records
+A your-domain.com YOUR_SERVER_IP
+A *.your-domain.com YOUR_SERVER_IP
+```
 
 ## Contributing
 
@@ -102,7 +91,5 @@ The application uses structured logging with support for:
 5. Open a Pull Request
 
 ## License
-[BSD](LICENSE)
 
-## Acknowledgments
-- [Charm](https://charm.sh/) for the amazing TUI tools
+This project is licensed under the MIT License - see the LICENSE file for details.

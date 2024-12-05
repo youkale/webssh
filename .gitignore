@@ -2,3 +2,4 @@
 .tool-versions
 .release
 config.json
+dist

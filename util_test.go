@@ -1,4 +1,4 @@
-package webssh
+package echogy
 
 import (
 	"net"

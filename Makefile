@@ -1,4 +1,4 @@
-PROC_NAME = webssh
+PROC_NAME = echogy
 RELEASE_PATH = release
 PACKAGE_PATH = release
 SERVER_PATH = cmd

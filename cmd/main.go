@@ -71,9 +71,9 @@ func main() {
 	}
 
 	go func() {
-		webssh.Serve(ctx, config.SSHAddr, config.HttpAddr, config.Domain, []byte(config.PrivateKey))
+		echogy.Serve(ctx, config.SSHAddr, config.HttpAddr, config.Domain, []byte(config.PrivateKey))
 	}()
 	<-c
-	logger.Warn("webssh will be shutdown", map[string]interface{}{})
+	logger.Warn("echogy will be shutdown", map[string]interface{}{})
 	cancelFunc()
 }

@@ -117,12 +117,13 @@ archives:
       owner: root
       mtime: "{{ .CommitDate }}"
     files:
+      - src: cmd/config.sample.json
       - src: README.md
         info:
           owner: root
           group: root
           mtime: "{{ .CommitDate }}"
-      - src: LICENSE.md
+      - src: LICENSE
         info:
           owner: root
           group: root

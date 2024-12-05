@@ -29,8 +29,10 @@ jobs:
         go mod verify
         go mod download
       
-    - name: Make
-      run: make build
+    - name: Test
+      run: |
+        go test -v ./...
+        go test -v ./tui/...
 
   goreleaser:
     runs-on: ubuntu-latest

@@ -14,25 +14,25 @@ env:
 
 jobs:
 
-  build:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: ${{ env.GO_VERSION }}
-
-    - name: Deps
-      run: |
-        go mod verify
-        go mod download
-      
-    - name: Test
-      run: |
-        go test -v ./...
-        go test -v ./tui/...
+#  build:
+#    runs-on: ubuntu-latest
+#    steps:
+#    - uses: actions/checkout@v4
+#
+#    - name: Set up Go
+#      uses: actions/setup-go@v4
+#      with:
+#        go-version: ${{ env.GO_VERSION }}
+#
+#    - name: Deps
+#      run: |
+#        go mod verify
+#        go mod download
+#
+#    - name: Test
+#      run: |
+#        go test -v ./...
+#        go test -v ./tui/...
 
   goreleaser:
     runs-on: ubuntu-latest

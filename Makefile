@@ -13,6 +13,7 @@ build:
 	cd ${SERVER_PATH} &&  GOOS=linux GOARCH=amd64 go build -o $(RELEASE_PATH)/${PROC_NAME}
 
 clean:
+	rm -rf dist
 	# clean package
 	rm -rf ${PACKAGE_PATH}
 	# clean server build
@@ -21,4 +22,5 @@ clean:
 package: clean build
 	mkdir -p ${PACKAGE_PATH}
 	cp ${SERVER_PATH}/${RELEASE_PATH}/${PROC_NAME}  ${PACKAGE_PATH}
-	cp ${SERVER_PATH}/config.example.json  ${PACKAGE_PATH}/config.json
+	cp config.sample.json  ${PACKAGE_PATH}/config.json
+	cp -a bin/ ${PACKAGE_PATH}

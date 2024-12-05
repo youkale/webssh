@@ -1,6 +1,7 @@
 {
   "pprof": true,
   "logLevel": "debug",
+  "logFile": "/opt/",
   "httpAddr": "localhost:7777",
   "sshAddr": "localhost:2222",
   "domain": "webs.sh",

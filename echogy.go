@@ -176,21 +176,15 @@ func Serve(_ctx context.Context, sshAddr, facadeAddr, facadeDomain string, sshKe
 	go func() {
 		wg.Done()
 		err := server.ListenAndServe()
-		logger.Fatal("starting ssh server", err, map[string]interface{}{
+		logger.Fatal("ssh server", err, map[string]interface{}{
 			"module":  "serve",
 			"address": sshAddr,
 		})
 	}()
-	logger.Warn("started ssh server", map[string]interface{}{
-		"module":  "serve",
-		"address": sshAddr,
-	})
 	wg.Wait()
 
 	<-_ctx.Done()
 	server.Shutdown(ctx)
-	logger.Warn("starting ssh server", map[string]interface{}{
-		"module": "serve",
-	})
+	logger.Warn("echogy shutdown", map[string]interface{}{})
 	cancelFunc()
 }

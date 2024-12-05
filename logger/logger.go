@@ -3,6 +3,7 @@ package logger
 import (
 	"fmt"
 	"github.com/rs/zerolog"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -11,6 +12,8 @@ import (
 var (
 	// defaultLogger is the default logger instance
 	defaultLogger zerolog.Logger
+	consoleWriter zerolog.ConsoleWriter
+	fileWriters   []io.Writer
 
 	// ANSI color codes
 	colorRed     = "\033[31m"
@@ -27,7 +30,7 @@ func init() {
 	zerolog.TimeFieldFormat = time.RFC3339Nano
 
 	// Create console writer with custom formatting
-	consoleWriter := zerolog.ConsoleWriter{
+	consoleWriter = zerolog.ConsoleWriter{
 		Out:        os.Stdout,
 		TimeFormat: "2006-01-02 15:04:05.000",
 		FormatLevel: func(i interface{}) string {
@@ -86,8 +89,16 @@ func AddFileOutput(logPath string) error {
 		return fmt.Errorf("failed to open log file: %v", err)
 	}
 
-	// Create multi-writer for both console and file
-	multiWriter := zerolog.MultiLevelWriter(file)
+	// Add file to writers list
+	fileWriters = append(fileWriters, file)
+
+	// Create multi-writer for both console and file outputs
+	writers := make([]io.Writer, 0, len(fileWriters)+1)
+	writers = append(writers, consoleWriter)
+	for _, fw := range fileWriters {
+		writers = append(writers, fw)
+	}
+	multiWriter := zerolog.MultiLevelWriter(writers...)
 
 	// Update default logger with new writer
 	defaultLogger = defaultLogger.Output(multiWriter)

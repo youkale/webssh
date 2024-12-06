@@ -15,7 +15,7 @@ const (
 	Uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	Digits    = "0123456789"
 	// AlphaNum Predefined character sets
-	AlphaNum = Lowercase + Uppercase + Digits
+	AlphaNum = Lowercase + Digits
 )
 
 // GenerateRandomString generates a random string of specified length using the given character set

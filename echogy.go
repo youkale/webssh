@@ -80,6 +80,7 @@ func newSshServer(sshAddr string, facadeDomain string, sshKey []byte, bindPort u
 
 	return &ssh.Server{
 		//IdleTimeout: 300 * time.Second,
+		Version:     "echogy",
 		HostSigners: []ssh.Signer{signer},
 		Addr:        sshAddr,
 		PtyCallback: func(ctx ssh.Context, pty ssh.Pty) bool {
@@ -157,7 +158,11 @@ func Serve(_ctx context.Context, sshAddr, facadeAddr, facadeDomain string, sshKe
 	wg.Add(1)
 	go func() {
 		wg.Done()
-		facadeServe(ctx, facadeAddr, func(facadeId string, req *facadeRequest) bool {
+		logger.Warn("started facade server", map[string]interface{}{
+			"module":  "serve",
+			"address": facadeAddr,
+		})
+		facadeServe(ctx, facadeAddr, func(facadeId string, req *hijackConn) bool {
 			if value, found := sessionHub.Load(facadeId); found {
 				channel := value.(*forwarder)
 				channel.forward(req)
@@ -166,15 +171,16 @@ func Serve(_ctx context.Context, sshAddr, facadeAddr, facadeDomain string, sshKe
 			return false
 		})
 	}()
-	logger.Warn("started facade server", map[string]interface{}{
-		"module":  "serve",
-		"address": facadeAddr,
-	})
+
 	wg.Wait()
 
 	wg.Add(1)
 	go func() {
 		wg.Done()
+		logger.Warn("started ssh server", map[string]interface{}{
+			"module":  "serve",
+			"address": sshAddr,
+		})
 		err := server.ListenAndServe()
 		logger.Fatal("ssh server", err, map[string]interface{}{
 			"module":  "serve",

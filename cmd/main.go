@@ -46,6 +46,15 @@ func logLevel(level string) zerolog.Level {
 	return zerolog.WarnLevel
 }
 
+func setOSEnv() {
+	os.Setenv("COLORTERM", "truecolor")
+	os.Setenv("TERM", "xterm-256color")
+	os.Setenv("CLICOLOR", "1")
+	os.Setenv("CLICOLOR_FORCE", "1")
+	os.Setenv("FORCE_COLOR", "1")
+	os.Setenv("TERM_PROGRAM", "xterm")
+}
+
 func main() {
 
 	flag.Parse()
@@ -59,6 +68,8 @@ func main() {
 		}
 		pidPath = execPath + ".pid"
 	}
+
+	setOSEnv()
 
 	// Write PID to file
 	pid := os.Getpid()

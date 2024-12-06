@@ -5,6 +5,7 @@ import (
 	"mime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // orStr returns string b if string a is empty, otherwise returns a
@@ -23,15 +24,8 @@ const (
 	TB                    // 1 << (10*4)
 )
 
-// humanSize converts a string containing bytes size to human readable format
-// Returns empty string if input is invalid
-func humanSize(size string) string {
-	atoi, err := strconv.ParseInt(size, 10, 64)
-	if err != nil {
-		return ""
-	}
-
-	bytes := float64(atoi)
+func humanBytes(i int64) string {
+	bytes := float64(i)
 	switch {
 	case bytes < KB:
 		return fmt.Sprintf("%.0fB", bytes)
@@ -44,6 +38,39 @@ func humanSize(size string) string {
 	default:
 		return fmt.Sprintf("%.1fT", bytes/TB)
 	}
+}
+
+// humanSize converts a string containing bytes size to human readable format
+// Returns empty string if input is invalid
+func humanSize(size string) string {
+	atoi, err := strconv.ParseInt(size, 10, 64)
+	if err != nil {
+		return ""
+	}
+	return humanBytes(atoi)
+}
+
+// HumanMillis converts milliseconds to a human-readable duration string
+func humanMillis(ms int64) string {
+	duration := time.Duration(ms) * time.Millisecond
+
+	if duration < time.Second {
+		return fmt.Sprintf("%dms", ms)
+	}
+
+	if duration < time.Minute {
+		return fmt.Sprintf("%.1fs", float64(duration)/float64(time.Second))
+	}
+
+	if duration < time.Hour {
+		minutes := duration / time.Minute
+		seconds := (duration % time.Minute) / time.Second
+		return fmt.Sprintf("%dm%ds", minutes, seconds)
+	}
+
+	hours := duration / time.Hour
+	minutes := (duration % time.Hour) / time.Minute
+	return fmt.Sprintf("%dh%dm", hours, minutes)
 }
 
 // parseContentType extracts and formats the media type from a Content-Type header

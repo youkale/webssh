@@ -36,7 +36,7 @@ func notFound(id string, conn net.Conn) {
 	conn.Close()
 }
 
-func handleConnection(c net.Conn, forward func(facadeId string, request *facadeRequest) bool) {
+func handleConnection(c net.Conn, forward func(facadeId string, request *hijackConn) bool) {
 	reader := newBufferedReader(c)
 	req, err := http.ReadRequest(bufio.NewReader(reader))
 	if err != nil {
@@ -60,7 +60,10 @@ func handleConnection(c net.Conn, forward func(facadeId string, request *facadeR
 	}
 	id := domainSep[0]
 
-	canForward := forward(id, &facadeRequest{Conn: reader.toBufferedConn(c), request: req})
+	conn := newHijackConn(reader.toBufferedConn(c))
+	conn.AddRequest(req)
+
+	canForward := forward(id, conn)
 
 	if canForward {
 		logger.Debug("found forward", map[string]interface{}{
@@ -80,7 +83,7 @@ func handleConnection(c net.Conn, forward func(facadeId string, request *facadeR
 	}
 }
 
-func facadeServe(ctx context.Context, addr string, forward func(facadeId string, request *facadeRequest) bool) {
+func facadeServe(ctx context.Context, addr string, forward func(facadeId string, request *hijackConn) bool) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		logger.Fatal("start Listen", err, map[string]interface{}{

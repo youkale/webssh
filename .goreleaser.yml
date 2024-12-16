@@ -9,7 +9,7 @@ before:
     - go mod tidy
 
 gomod:
-  proxy: true
+  proxy: false
 
 report_sizes: true
 

@@ -22,56 +22,33 @@ const (
 var (
 	dashStyle = lipgloss.NewStyle().Padding(1)
 
-	headerStyle = lipgloss.NewStyle().
-		Bold(true).
-		Border(lipgloss.NormalBorder(), false, false, true, false).
-		PaddingBottom(1)
+	headerStyle = lipgloss.NewStyle().Bold(true).Border(lipgloss.NormalBorder(), false, false, true, false).PaddingBottom(1)
 
-	urlStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.AdaptiveColor{Light: "#3182CE", Dark: "#90CDF4"})
+	urlStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#3182CE", Dark: "#90CDF4"})
 
-	statsStyle = lipgloss.NewStyle().
-		PaddingLeft(1).
-		PaddingRight(1).
-		Foreground(lipgloss.AdaptiveColor{Light: "#4A5568", Dark: "#A0AEC0"})
+	statsStyle = lipgloss.NewStyle().PaddingLeft(1).PaddingRight(1).Foreground(lipgloss.AdaptiveColor{Light: "#4A5568", Dark: "#A0AEC0"})
 
 	// Column styles
-	colMethodHeaderStyle = lipgloss.NewStyle().
-		Align(lipgloss.Center).
-		Bold(true)
+	colMethodHeaderStyle = lipgloss.NewStyle().Align(lipgloss.Center).Bold(true)
 
-	colNoStyle = lipgloss.NewStyle().
-		Align(lipgloss.Left)
+	colNoStyle = lipgloss.NewStyle().Align(lipgloss.Left)
 
-	colStatusStyle = lipgloss.NewStyle().
-		Bold(true)
+	colStatusStyle = lipgloss.NewStyle().Bold(true)
 
-	colPathHeaderStyle = lipgloss.NewStyle().
-		Bold(false)
+	colPathHeaderStyle = lipgloss.NewStyle().Bold(false)
 
-	colPathStyle = lipgloss.NewStyle().
-		Inherit(colPathHeaderStyle)
+	colPathStyle = lipgloss.NewStyle().Inherit(colPathHeaderStyle)
 
-	colUseTimeHeaderStyle = lipgloss.NewStyle().
-		Align(lipgloss.Right)
+	colUseTimeHeaderStyle = lipgloss.NewStyle().Align(lipgloss.Right)
 
-	colUseTimeStyle = lipgloss.NewStyle().
-		Inherit(colUseTimeHeaderStyle).
-		Foreground(lipgloss.AdaptiveColor{Light: "#4A5568", Dark: "#A0AEC0"})
+	colUseTimeStyle = lipgloss.NewStyle().Inherit(colUseTimeHeaderStyle).Foreground(lipgloss.AdaptiveColor{Light: "#4A5568", Dark: "#A0AEC0"})
 
 	// QR code styles
-	qrStyle = lipgloss.NewStyle().
-		Align(lipgloss.Center).
-		Foreground(lipgloss.AdaptiveColor{Light: "#1A1A1A", Dark: "#F1F1F1"})
+	qrStyle = lipgloss.NewStyle().Align(lipgloss.Center).Foreground(lipgloss.AdaptiveColor{Light: "#1A1A1A", Dark: "#F1F1F1"})
 
-	githubStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.AdaptiveColor{Light: "#3182CE", Dark: "#90CDF4"}).
-		Bold(true)
+	githubStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#3182CE", Dark: "#90CDF4"}).Bold(true)
 
-	descStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.AdaptiveColor{Light: "#4A5568", Dark: "#A0AEC0"}).
-		PaddingTop(1)
+	descStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#4A5568", Dark: "#A0AEC0"}).PaddingTop(1)
 
 	// Table styles
 	tableStyle = table.Styles{
